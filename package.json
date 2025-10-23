@@ -1,0 +1,28 @@
+{
+    "name": "cao-bnc-bot",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "vite build",
+        "dev": "vite",
+        "watch": "vite build --watch"
+    },
+    "devDependencies": {
+        "@inertiajs/react": "^1.0.0",
+        "@tailwindcss/forms": "^0.5.7",
+        "@vitejs/plugin-react": "^4.2.1",
+        "autoprefixer": "^10.4.16",
+        "laravel-vite-plugin": "^1.0.0",
+        "postcss": "^8.4.32",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "tailwindcss": "^3.4.0",
+        "vite": "^5.0.10"
+    },
+    "dependencies": {
+        "@headlessui/react": "^1.7.17",
+        "@heroicons/react": "^2.0.18",
+        "axios": "^1.6.4",
+        "ziggy-js": "^2.0.0"
+    }
+}
