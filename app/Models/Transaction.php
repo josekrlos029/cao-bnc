@@ -17,6 +17,7 @@ class Transaction extends Model
         'trade_id',
         'transaction_id',
         'transaction_type',
+        'exchange',
         'order_type',
         'asset_type',
         'fiat_type',
@@ -31,6 +32,7 @@ class Transaction extends Model
         'payment_method',
         'account_number',
         'counter_party',
+        'counter_party_full_name',
         'counter_party_dni',
         'dni_type',
         'my_payment_method_id',
@@ -41,6 +43,7 @@ class Transaction extends Model
         'notes',
         'source_endpoint',
         'last_synced_at',
+        'enrichment_status',
         'is_manual_entry',
         'user_id',
     ];
@@ -65,6 +68,22 @@ class Transaction extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Obtener el CounterParty relacionado si existe
+     * Busca por counter_party name, exchange y user_id
+     */
+    public function getCounterParty()
+    {
+        if (!$this->counter_party || !$this->user_id || !$this->exchange) {
+            return null;
+        }
+
+        return CounterParty::where('user_id', $this->user_id)
+            ->where('exchange', $this->exchange)
+            ->where('counter_party', $this->counter_party)
+            ->first();
     }
 
     // Scopes
@@ -158,5 +177,45 @@ class Transaction extends Model
     public function getBinanceIdentifier(): string
     {
         return $this->order_number ?? $this->trade_id ?? $this->transaction_id ?? '';
+    }
+
+    /**
+     * Accessor para counter_party_dni
+     * Usa el valor de CounterParty si existe, sino el campo directo
+     */
+    public function getCounterPartyDniAttribute($value)
+    {
+        // Si ya hay un valor directo, usar el valor directo
+        if ($value) {
+            return $value;
+        }
+
+        // Intentar obtener de CounterParty
+        $counterParty = $this->getCounterParty();
+        if ($counterParty && $counterParty->counter_party_dni) {
+            return $counterParty->counter_party_dni;
+        }
+
+        return $value;
+    }
+
+    /**
+     * Accessor para dni_type
+     * Usa el valor de CounterParty si existe, sino el campo directo
+     */
+    public function getDniTypeAttribute($value)
+    {
+        // Si ya hay un valor directo, usar el valor directo
+        if ($value) {
+            return $value;
+        }
+
+        // Intentar obtener de CounterParty
+        $counterParty = $this->getCounterParty();
+        if ($counterParty && $counterParty->dni_type) {
+            return $counterParty->dni_type;
+        }
+
+        return $value;
     }
 }

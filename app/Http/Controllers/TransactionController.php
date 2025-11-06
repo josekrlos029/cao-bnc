@@ -3,23 +3,34 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
+use App\Models\CounterParty;
 use App\Jobs\SyncBinanceTransactions;
+use App\Jobs\SyncBybitTransactions;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\View\View;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Schema;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class TransactionController extends Controller
 {
     /**
      * Mostrar el dashboard de transacciones
      */
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
-        $query = Transaction::query();
+        $userId = auth()->id();
+        
+        // Query base filtrado por usuario autenticado
+        $query = Transaction::where('user_id', $userId);
 
         // Filtros
+        if ($request->filled('exchange')) {
+            $query->where('exchange', $request->exchange);
+        }
+
         if ($request->filled('transaction_type')) {
             $query->where('transaction_type', $request->transaction_type);
         }
@@ -48,48 +59,103 @@ class TransactionController extends Controller
             $query->where('is_manual_entry', $request->boolean('is_manual'));
         }
 
-        // Ordenamiento
-        $sortBy = $request->get('sort_by', 'binance_create_time');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
+        // Búsqueda por número de orden
+        if ($request->filled('search')) {
+            $query->where('order_number', 'like', '%' . $request->search . '%');
+        }
 
-        $transactions = $query->paginate(50);
+        // Ordenamiento: siempre por fecha de la orden descendente (más recientes primero)
+        $query->orderBy('binance_create_time', 'desc');
 
-        // Estadísticas
+        $transactions = $query->paginate(50)->appends($request->query());
+
+        // Estadísticas filtradas por usuario
+        $userTransactionsQuery = Transaction::where('user_id', $userId);
         $stats = [
-            'total_transactions' => Transaction::count(),
-            'completed_transactions' => Transaction::completed()->count(),
-            'pending_transactions' => Transaction::where('status', 'pending')->count(),
-            'manual_entries' => Transaction::manualEntries()->count(),
-            'total_value_usdt' => Transaction::completed()->sum('total_price'),
+            'total_transactions' => (clone $userTransactionsQuery)->count(),
+            'completed_transactions' => (clone $userTransactionsQuery)->completed()->count(),
+            'pending_transactions' => (clone $userTransactionsQuery)->where('status', 'pending')->count(),
+            'manual_entries' => (clone $userTransactionsQuery)->manualEntries()->count(),
+            'total_value_usdt' => (clone $userTransactionsQuery)->completed()->sum('total_price'),
+            'last_sync' => (clone $userTransactionsQuery)->whereNotNull('last_synced_at')
+                ->orderBy('last_synced_at', 'desc')
+                ->value('last_synced_at'),
         ];
 
-        // Opciones para filtros
+        // Estadísticas de enriquecimiento (solo para transacciones P2P)
+        $p2pQuery = (clone $userTransactionsQuery)->where('transaction_type', 'p2p_order');
+        $totalP2P = (int) $p2pQuery->count();
+        
+        // Verificar si la columna enrichment_status existe antes de usarla
+        $enrichmentStats = [
+            'total_p2p' => $totalP2P,
+            'pending' => 0,
+            'processing' => 0,
+            'completed' => 0,
+            'failed' => 0,
+            'not_started' => 0,
+        ];
+        
+        if (Schema::hasColumn('transactions', 'enrichment_status')) {
+            $enrichmentStats['pending'] = (int) $p2pQuery->where('enrichment_status', 'pending')->count();
+            $enrichmentStats['processing'] = (int) $p2pQuery->where('enrichment_status', 'processing')->count();
+            $enrichmentStats['completed'] = (int) $p2pQuery->where('enrichment_status', 'completed')->count();
+            $enrichmentStats['failed'] = (int) $p2pQuery->where('enrichment_status', 'failed')->count();
+            $enrichmentStats['not_started'] = (int) $p2pQuery->whereNull('enrichment_status')->count();
+        } else {
+            // Si la columna no existe, todas las transacciones están "sin iniciar"
+            $enrichmentStats['not_started'] = $totalP2P;
+        }
+
+        // Calcular porcentaje de progreso
+        $totalEnrichable = $enrichmentStats['total_p2p'];
+        $enriched = $enrichmentStats['completed'];
+        $progressPercentage = $totalEnrichable > 0 
+            ? round(($enriched / $totalEnrichable) * 100, 2) 
+            : 100;
+        
+        $enrichmentStats['progress_percentage'] = (float) $progressPercentage;
+        $enrichmentStats['has_active_enrichment'] = ($enrichmentStats['pending'] + $enrichmentStats['processing']) > 0;
+
+        // Opciones para filtros (solo del usuario)
         $filterOptions = [
-            'transaction_types' => Transaction::distinct()->pluck('transaction_type')->filter(),
-            'statuses' => Transaction::distinct()->pluck('status')->filter(),
-            'asset_types' => Transaction::distinct()->pluck('asset_type')->filter(),
-            'fiat_types' => Transaction::distinct()->pluck('fiat_type')->filter(),
+            'exchanges' => Transaction::where('user_id', $userId)->distinct()->pluck('exchange')->filter()->values(),
+            'transaction_types' => Transaction::where('user_id', $userId)->distinct()->pluck('transaction_type')->filter()->values(),
+            'statuses' => Transaction::where('user_id', $userId)->distinct()->pluck('status')->filter()->values(),
+            'asset_types' => Transaction::where('user_id', $userId)->distinct()->pluck('asset_type')->filter()->values(),
+            'fiat_types' => Transaction::where('user_id', $userId)->distinct()->pluck('fiat_type')->filter()->values(),
         ];
 
-        return view('transactions.index', compact('transactions', 'stats', 'filterOptions'));
+        return Inertia::render('Transactions/Index', [
+            'transactions' => $transactions,
+            'stats' => $stats,
+            'enrichmentStats' => $enrichmentStats,
+            'filterOptions' => $filterOptions,
+            'filters' => $request->only(['exchange', 'transaction_type', 'status', 'asset_type', 'fiat_type', 'date_from', 'date_to', 'search']),
+        ]);
     }
 
     /**
      * Mostrar detalles de una transacción
      */
-    public function show(Transaction $transaction): View
+    public function show(Transaction $transaction): Response
     {
-        $this->authorize('view', $transaction);
-        return view('transactions.show', compact('transaction'));
+        // Verificar que la transacción pertenezca al usuario autenticado
+        if ($transaction->user_id !== auth()->id()) {
+            abort(403, 'Unauthorized');
+        }
+        
+        return Inertia::render('Transactions/Show', [
+            'transaction' => $transaction,
+        ]);
     }
 
     /**
      * Crear nueva transacción manual
      */
-    public function create(): View
+    public function create(): Response
     {
-        return view('transactions.create');
+        return Inertia::render('Transactions/Create');
     }
 
     /**
@@ -124,6 +190,7 @@ class TransactionController extends Controller
             $transaction = Transaction::create([
                 'order_number' => $request->order_number,
                 'transaction_type' => $request->transaction_type,
+                'exchange' => $request->exchange ?? 'binance',
                 'asset_type' => $request->asset_type,
                 'fiat_type' => $request->fiat_type,
                 'order_type' => $request->order_type,
@@ -155,32 +222,62 @@ class TransactionController extends Controller
 
     /**
      * Editar transacción
+     * Permitir edición de todas las transacciones (no solo manuales)
+     * para editar dni_type y counter_party_dni
      */
-    public function edit(Transaction $transaction): View
+    public function edit(Transaction $transaction): Response
     {
-        return view('transactions.edit', compact('transaction'));
+        // Verificar que la transacción pertenezca al usuario autenticado
+        if ($transaction->user_id !== auth()->id()) {
+            abort(403, 'Unauthorized');
+        }
+        
+        return Inertia::render('Transactions/Edit', [
+            'transaction' => $transaction,
+        ]);
     }
 
     /**
      * Actualizar transacción
+     * Permite editar dni_type y counter_party_dni en todas las transacciones
+     * Para otros campos, solo permite editar si es manual_entry
      */
     public function update(Request $request, Transaction $transaction): JsonResponse
     {
+        // Verificar que la transacción pertenezca al usuario autenticado
+        if ($transaction->user_id !== auth()->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized'
+            ], 403);
+        }
+
+        // Validación para dni_type y counter_party_dni (permitido en todas las transacciones)
         $validator = Validator::make($request->all(), [
-            'order_number' => 'required|string|max:100|unique:transactions,order_number,' . $transaction->id,
-            'transaction_type' => 'required|in:spot_trade,p2p_order,deposit,withdrawal,pay_transaction,c2c_order,manual_entry',
-            'asset_type' => 'required|string|max:20',
-            'fiat_type' => 'nullable|string|max:20',
-            'order_type' => 'nullable|in:BUY,SELL',
-            'quantity' => 'required|numeric|min:0',
-            'price' => 'nullable|numeric|min:0',
-            'total_price' => 'nullable|numeric|min:0',
-            'status' => 'required|in:pending,processing,completed,cancelled,failed,expired',
-            'binance_create_time' => 'required|date',
-            'notes' => 'nullable|string|max:1000',
-            'payment_method' => 'nullable|string|max:50',
-            'counter_party' => 'nullable|string|max:255',
+            'dni_type' => 'nullable|string|max:50|in:CC,CE,PASSPORT,NIT,TI,RUT,OTRO',
+            'counter_party_dni' => 'nullable|string|max:255',
         ]);
+
+        // Si es una transacción manual, validar todos los campos
+        if ($transaction->is_manual_entry) {
+            $validator = Validator::make($request->all(), [
+                'order_number' => 'required|string|max:100|unique:transactions,order_number,' . $transaction->id,
+                'transaction_type' => 'required|in:spot_trade,p2p_order,deposit,withdrawal,pay_transaction,c2c_order,manual_entry',
+                'asset_type' => 'required|string|max:20',
+                'fiat_type' => 'nullable|string|max:20',
+                'order_type' => 'nullable|in:BUY,SELL',
+                'quantity' => 'required|numeric|min:0',
+                'price' => 'nullable|numeric|min:0',
+                'total_price' => 'nullable|numeric|min:0',
+                'status' => 'required|in:pending,processing,completed,cancelled,failed,expired',
+                'binance_create_time' => 'required|date',
+                'notes' => 'nullable|string|max:1000',
+                'payment_method' => 'nullable|string|max:50',
+                'counter_party' => 'nullable|string|max:255',
+                'dni_type' => 'nullable|string|max:50|in:CC,CE,PASSPORT,NIT,TI,RUT,OTRO',
+                'counter_party_dni' => 'nullable|string|max:255',
+            ]);
+        }
 
         if ($validator->fails()) {
             return response()->json([
@@ -190,26 +287,70 @@ class TransactionController extends Controller
         }
 
         try {
-            $transaction->update([
-                'order_number' => $request->order_number,
-                'transaction_type' => $request->transaction_type,
-                'asset_type' => $request->asset_type,
-                'fiat_type' => $request->fiat_type,
-                'order_type' => $request->order_type,
-                'quantity' => $request->quantity,
-                'price' => $request->price,
-                'total_price' => $request->total_price,
-                'status' => $request->status,
-                'binance_create_time' => Carbon::parse($request->binance_create_time),
-                'notes' => $request->notes,
-                'payment_method' => $request->payment_method,
-                'counter_party' => $request->counter_party,
-            ]);
+            $updateData = [];
+            
+            // Si es manual entry, permitir actualizar todos los campos
+            if ($transaction->is_manual_entry) {
+                $updateData = [
+                    'order_number' => $request->order_number,
+                    'transaction_type' => $request->transaction_type,
+                    'exchange' => $request->exchange ?? $transaction->exchange ?? 'binance',
+                    'asset_type' => $request->asset_type,
+                    'fiat_type' => $request->fiat_type,
+                    'order_type' => $request->order_type,
+                    'quantity' => $request->quantity,
+                    'price' => $request->price,
+                    'total_price' => $request->total_price,
+                    'status' => $request->status,
+                    'binance_create_time' => Carbon::parse($request->binance_create_time),
+                    'notes' => $request->notes,
+                    'payment_method' => $request->payment_method,
+                    'counter_party' => $request->counter_party,
+                ];
+            }
+            
+            // Siempre permitir actualizar dni_type y counter_party_dni
+            if ($request->has('dni_type')) {
+                $updateData['dni_type'] = $request->dni_type;
+            }
+            
+            if ($request->has('counter_party_dni')) {
+                $updateData['counter_party_dni'] = $request->counter_party_dni;
+            }
+            
+            // Si se proporciona counter_party, buscar/crear CounterParty y actualizar sus datos
+            if ($request->filled('counter_party') || $request->filled('dni_type') || $request->filled('counter_party_dni')) {
+                $counterPartyName = $request->counter_party ?? $transaction->counter_party;
+                $exchange = $transaction->exchange ?? 'binance';
+                
+                if ($counterPartyName && auth()->id()) {
+                    $counterParty = CounterParty::findOrCreateForTransaction(
+                        auth()->id(),
+                        $exchange,
+                        $counterPartyName
+                    );
+                    
+                    // Actualizar datos del CounterParty si se proporcionan
+                    $counterPartyUpdate = [];
+                    if ($request->filled('dni_type')) {
+                        $counterPartyUpdate['dni_type'] = $request->dni_type;
+                    }
+                    if ($request->filled('counter_party_dni')) {
+                        $counterPartyUpdate['counter_party_dni'] = $request->counter_party_dni;
+                    }
+                    
+                    if (!empty($counterPartyUpdate)) {
+                        $counterParty->update($counterPartyUpdate);
+                    }
+                }
+            }
+            
+            $transaction->update($updateData);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Transaction updated successfully',
-                'transaction' => $transaction
+                'transaction' => $transaction->fresh()
             ]);
 
         } catch (\Exception $e) {
@@ -226,11 +367,19 @@ class TransactionController extends Controller
     public function destroy(Transaction $transaction): JsonResponse
     {
         try {
+            // Verificar que la transacción pertenezca al usuario autenticado
+            if ($transaction->user_id !== auth()->id()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 403);
+            }
+            
             // Solo permitir eliminar entradas manuales
             if (!$transaction->is_manual_entry) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only manual entries can be deleted'
+                    'message' => 'Solo se pueden eliminar entradas manuales'
                 ], 403);
             }
 
@@ -258,7 +407,6 @@ class TransactionController extends Controller
             'days' => 'nullable|integer|min:1|max:365',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after:start_date',
-            'user_id' => 'nullable|exists:users,id',
         ]);
 
         if ($validator->fails()) {
@@ -269,9 +417,10 @@ class TransactionController extends Controller
         }
 
         try {
+            // Usar siempre el usuario autenticado para seguridad
+            $userId = auth()->id();
             $startTime = null;
             $endTime = null;
-            $userId = $request->user_id;
 
             if ($request->start_date && $request->end_date) {
                 $startTime = Carbon::parse($request->start_date)->startOfDay();
@@ -284,21 +433,81 @@ class TransactionController extends Controller
                 $endTime = now()->endOfDay();
             }
 
-            SyncBinanceTransactions::dispatch($startTime, $endTime, $userId);
+            // Verificar que el usuario tenga credenciales activas de al menos un exchange
+            $hasBinanceCredentials = \App\Models\BinanceCredential::where('user_id', $userId)
+                ->where('is_active', true)
+                ->exists();
+            
+            $hasBybitCredentials = \App\Models\BybitCredential::where('user_id', $userId)
+                ->where('is_active', true)
+                ->exists();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Sync job dispatched successfully',
-                'sync_period' => [
-                    'start' => $startTime->format('Y-m-d H:i:s'),
-                    'end' => $endTime->format('Y-m-d H:i:s')
-                ]
-            ]);
+            if (!$hasBinanceCredentials && !$hasBybitCredentials) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No tienes credenciales de ningún exchange configuradas. Por favor, configura tus credenciales primero.'
+                ], 400);
+            }
+
+            // En modo desarrollo, ejecutar sincrónicamente para pruebas más rápidas
+            // En producción, usar dispatch() para ejecutar en background
+            if (app()->environment('local')) {
+                try {
+                    $syncedExchanges = [];
+                    
+                    if ($hasBinanceCredentials) {
+                        SyncBinanceTransactions::dispatchSync($startTime, $endTime, $userId);
+                        $syncedExchanges[] = 'Binance';
+                    }
+                    
+                    if ($hasBybitCredentials) {
+                        SyncBybitTransactions::dispatchSync($startTime, $endTime, $userId);
+                        $syncedExchanges[] = 'Bybit';
+                    }
+                    
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Sincronización completada. Las transacciones se han actualizado.',
+                        'synced_exchanges' => $syncedExchanges,
+                        'sync_period' => [
+                            'start' => $startTime->format('Y-m-d H:i:s'),
+                            'end' => $endTime->format('Y-m-d H:i:s')
+                        ]
+                    ]);
+                } catch (\Exception $e) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Error durante la sincronización: ' . $e->getMessage()
+                    ], 500);
+                }
+            } else {
+                $syncedExchanges = [];
+                
+                if ($hasBinanceCredentials) {
+                    SyncBinanceTransactions::dispatch($startTime, $endTime, $userId);
+                    $syncedExchanges[] = 'Binance';
+                }
+                
+                if ($hasBybitCredentials) {
+                    SyncBybitTransactions::dispatch($startTime, $endTime, $userId);
+                    $syncedExchanges[] = 'Bybit';
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Sincronización iniciada correctamente. Las transacciones aparecerán en unos momentos.',
+                    'synced_exchanges' => $syncedExchanges,
+                    'sync_period' => [
+                        'start' => $startTime->format('Y-m-d H:i:s'),
+                        'end' => $endTime->format('Y-m-d H:i:s')
+                    ]
+                ]);
+            }
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error starting sync: ' . $e->getMessage()
+                'message' => 'Error al iniciar sincronización: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -309,24 +518,27 @@ class TransactionController extends Controller
     public function stats(): JsonResponse
     {
         try {
+            $userId = auth()->id();
+            $userTransactionsQuery = Transaction::where('user_id', $userId);
+            
             $stats = [
-                'total_transactions' => Transaction::count(),
-                'completed_transactions' => Transaction::completed()->count(),
-                'pending_transactions' => Transaction::where('status', 'pending')->count(),
-                'manual_entries' => Transaction::manualEntries()->count(),
-                'by_type' => Transaction::selectRaw('transaction_type, COUNT(*) as count')
+                'total_transactions' => (clone $userTransactionsQuery)->count(),
+                'completed_transactions' => (clone $userTransactionsQuery)->completed()->count(),
+                'pending_transactions' => (clone $userTransactionsQuery)->where('status', 'pending')->count(),
+                'manual_entries' => (clone $userTransactionsQuery)->manualEntries()->count(),
+                'by_type' => (clone $userTransactionsQuery)->selectRaw('transaction_type, COUNT(*) as count')
                     ->groupBy('transaction_type')
                     ->pluck('count', 'transaction_type'),
-                'by_status' => Transaction::selectRaw('status, COUNT(*) as count')
+                'by_status' => (clone $userTransactionsQuery)->selectRaw('status, COUNT(*) as count')
                     ->groupBy('status')
                     ->pluck('count', 'status'),
-                'by_asset' => Transaction::selectRaw('asset_type, COUNT(*) as count')
+                'by_asset' => (clone $userTransactionsQuery)->selectRaw('asset_type, COUNT(*) as count')
                     ->groupBy('asset_type')
                     ->orderBy('count', 'desc')
                     ->limit(10)
                     ->pluck('count', 'asset_type'),
-                'total_value' => Transaction::completed()->sum('total_price'),
-                'last_sync' => Transaction::whereNotNull('last_synced_at')
+                'total_value' => (clone $userTransactionsQuery)->completed()->sum('total_price'),
+                'last_sync' => (clone $userTransactionsQuery)->whereNotNull('last_synced_at')
                     ->orderBy('last_synced_at', 'desc')
                     ->value('last_synced_at'),
             ];
@@ -365,7 +577,8 @@ class TransactionController extends Controller
         }
 
         try {
-            $query = Transaction::query();
+            $userId = auth()->id();
+            $query = Transaction::where('user_id', $userId);
 
             if ($request->transaction_type) {
                 $query->where('transaction_type', $request->transaction_type);

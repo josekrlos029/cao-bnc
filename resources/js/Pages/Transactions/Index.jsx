@@ -1,70 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { Head } from '@inertiajs/react';
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
-import { Button } from '@/Components/ui/button';
-import { Input } from '@/Components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
-import { Badge } from '@/Components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/Components/ui/dialog';
-import { Label } from '@/Components/ui/label';
-import { Textarea } from '@/Components/ui/textarea';
-import { Calendar, CalendarIcon, Download, Plus, RefreshCw, Search, Filter } from 'lucide-react';
-import { Calendar as CalendarComponent } from '@/Components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/Components/ui/popover';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { Head, Link, router } from '@inertiajs/react';
+import AppLayout from '@/Layouts/AppLayout';
 
 export default function TransactionsIndex({ 
     transactions, 
     stats, 
+    enrichmentStats,
     filterOptions,
     filters 
 }) {
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
+    const [selectedExchange, setSelectedExchange] = useState(filters.exchange || '');
     const [selectedType, setSelectedType] = useState(filters.transaction_type || '');
     const [selectedStatus, setSelectedStatus] = useState(filters.status || '');
-    const [selectedAsset, setSelectedAsset] = useState(filters.asset_type || '');
-    const [selectedFiat, setSelectedFiat] = useState(filters.fiat_type || '');
-    const [dateFrom, setDateFrom] = useState(filters.date_from ? new Date(filters.date_from) : null);
-    const [dateTo, setDateTo] = useState(filters.date_to ? new Date(filters.date_to) : null);
-    const [showManualEntry, setShowManualEntry] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+    const [syncMessage, setSyncMessage] = useState(null);
+    const [syncMessageType, setSyncMessageType] = useState(null);
+    const [viewMode, setViewMode] = useState('table'); // 'table' or 'cards'
 
-    // Estado para formulario de entrada manual
-    const [manualForm, setManualForm] = useState({
-        order_number: '',
-        transaction_type: 'manual_entry',
-        asset_type: '',
-        fiat_type: '',
-        order_type: '',
-        quantity: '',
-        price: '',
-        total_price: '',
-        status: 'completed',
-        binance_create_time: new Date(),
-        notes: '',
-        payment_method: '',
-        counter_party: ''
-    });
+    // Polling automático cuando hay enriquecimiento activo
+    useEffect(() => {
+        if (enrichmentStats && enrichmentStats.has_active_enrichment) {
+            const interval = setInterval(() => {
+                // Recargar la página cada 5 segundos si hay enriquecimiento activo
+                router.reload({ only: ['transactions', 'enrichmentStats', 'stats'] });
+            }, 5000);
+
+            return () => clearInterval(interval);
+        }
+    }, [enrichmentStats?.has_active_enrichment]);
 
     const handleSearch = () => {
         const params = new URLSearchParams();
         if (searchTerm) params.append('search', searchTerm);
+        if (selectedExchange) params.append('exchange', selectedExchange);
         if (selectedType) params.append('transaction_type', selectedType);
         if (selectedStatus) params.append('status', selectedStatus);
-        if (selectedAsset) params.append('asset_type', selectedAsset);
-        if (selectedFiat) params.append('fiat_type', selectedFiat);
-        if (dateFrom) params.append('date_from', format(dateFrom, 'yyyy-MM-dd'));
-        if (dateTo) params.append('date_to', format(dateTo, 'yyyy-MM-dd'));
         
         window.location.href = `/transactions?${params.toString()}`;
     };
 
-    const handleSync = async () => {
+    const handleSearchWithExchange = (exchange) => {
+        const params = new URLSearchParams();
+        if (searchTerm) params.append('search', searchTerm);
+        if (exchange) params.append('exchange', exchange);
+        if (selectedType) params.append('transaction_type', selectedType);
+        if (selectedStatus) params.append('status', selectedStatus);
+        
+        window.location.href = `/transactions?${params.toString()}`;
+    };
+
+    const handleSync = async (days = 7) => {
         setIsSyncing(true);
+        setSyncMessage(null);
+        setSyncMessageType(null);
+        
         try {
             const response = await fetch('/transactions/sync', {
                 method: 'POST',
@@ -72,492 +63,823 @@ export default function TransactionsIndex({
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: JSON.stringify({
-                    days: 7
-                })
+                body: JSON.stringify({ days: days })
             });
             
             const result = await response.json();
             if (result.success) {
-                alert('Sincronización iniciada correctamente');
-                window.location.reload();
+                setSyncMessage(result.message || 'Sincronización iniciada correctamente. Las transacciones aparecerán en unos momentos. Los datos se están enriqueciendo en background.');
+                setSyncMessageType('success');
+                setSyncDialogOpen(false);
+                
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
             } else {
-                alert('Error: ' + result.message);
+                setSyncMessage(result.message || 'Error al iniciar la sincronización');
+                setSyncMessageType('error');
             }
         } catch (error) {
-            alert('Error al iniciar sincronización');
+            setSyncMessage('Error de conexión al iniciar sincronización');
+            setSyncMessageType('error');
         } finally {
             setIsSyncing(false);
-            setSyncDialogOpen(false);
         }
     };
 
-    const handleManualEntry = async () => {
-        try {
-            const response = await fetch('/transactions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify(manualForm)
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-                alert('Transacción creada correctamente');
-                setShowManualEntry(false);
-                setManualForm({
-                    order_number: '',
-                    transaction_type: 'manual_entry',
-                    asset_type: '',
-                    fiat_type: '',
-                    order_type: '',
-                    quantity: '',
-                    price: '',
-                    total_price: '',
-                    status: 'completed',
-                    binance_create_time: new Date(),
-                    notes: '',
-                    payment_method: '',
-                    counter_party: ''
-                });
-                window.location.reload();
-            } else {
-                alert('Error: ' + (result.message || 'Error desconocido'));
-            }
-        } catch (error) {
-            alert('Error al crear transacción');
-        }
-    };
-
-    const getStatusBadgeVariant = (status) => {
+    const getStatusBadgeColor = (status) => {
         switch (status) {
-            case 'completed': return 'default';
-            case 'pending': return 'secondary';
-            case 'processing': return 'outline';
-            case 'cancelled': return 'destructive';
-            case 'failed': return 'destructive';
-            default: return 'secondary';
+            case 'completed': return 'bg-green-100 text-green-800';
+            case 'pending': return 'bg-yellow-100 text-yellow-800';
+            case 'processing': return 'bg-blue-100 text-blue-800';
+            case 'cancelled': return 'bg-gray-100 text-gray-800';
+            case 'failed': return 'bg-red-100 text-red-800';
+            default: return 'bg-gray-100 text-gray-800';
         }
     };
 
-    const getTypeBadgeVariant = (type) => {
-        switch (type) {
-            case 'spot_trade': return 'default';
-            case 'p2p_order': return 'secondary';
-            case 'deposit': return 'outline';
-            case 'withdrawal': return 'destructive';
-            case 'manual_entry': return 'outline';
-            default: return 'secondary';
+    const getEnrichmentBadgeColor = (enrichmentStatus) => {
+        if (!enrichmentStatus) return null;
+        switch (enrichmentStatus) {
+            case 'completed': return 'bg-green-100 text-green-800';
+            case 'processing': return 'bg-blue-100 text-blue-800';
+            case 'pending': return 'bg-yellow-100 text-yellow-800';
+            case 'failed': return 'bg-red-100 text-red-800';
+            default: return null;
         }
+    };
+
+    const getEnrichmentBadgeText = (enrichmentStatus) => {
+        if (!enrichmentStatus) return null;
+        switch (enrichmentStatus) {
+            case 'completed': return 'Enriquecido';
+            case 'processing': return 'Enriqueciendo...';
+            case 'pending': return 'Pendiente';
+            case 'failed': return 'Error';
+            default: return null;
+        }
+    };
+
+    const getTypeBadgeColor = (type) => {
+        switch (type) {
+            case 'spot_trade': return 'bg-blue-100 text-blue-800';
+            case 'p2p_order': return 'bg-green-100 text-green-800';
+            case 'deposit': return 'bg-yellow-100 text-yellow-800';
+            case 'withdrawal': return 'bg-red-100 text-red-800';
+            case 'manual_entry': return 'bg-purple-100 text-purple-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    };
+
+    const getOrderTypeBadge = (orderType) => {
+        if (!orderType) return null;
+        const isBuy = orderType === 'BUY';
+        return (
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                isBuy 
+                    ? 'bg-green-100 text-green-800 border border-green-300' 
+                    : 'bg-red-100 text-red-800 border border-red-300'
+            }`}>
+                {isBuy ? '↑ COMPRA' : '↓ VENTA'}
+            </span>
+        );
+    };
+
+    const formatNumber = (num) => {
+        if (!num && num !== 0) return '-';
+        return new Intl.NumberFormat('es-CO', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 8
+        }).format(num);
+    };
+
+    const formatCurrency = (num, currency = 'USD') => {
+        if (!num && num !== 0) return '-';
+        return new Intl.NumberFormat('es-CO', {
+            style: 'currency',
+            currency: currency,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(num);
+    };
+
+    const getExchangeName = (exchange) => {
+        if (!exchange) return 'Binance'; // Default para transacciones antiguas
+        return exchange.charAt(0).toUpperCase() + exchange.slice(1);
+    };
+
+    const getExchangeBadgeColor = (exchange) => {
+        const exchangeLower = (exchange || 'binance').toLowerCase();
+        switch (exchangeLower) {
+            case 'binance': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+            case 'bybit': return 'bg-blue-100 text-blue-800 border-blue-300';
+            case 'okx': return 'bg-purple-100 text-purple-800 border-purple-300';
+            default: return 'bg-gray-100 text-gray-800 border-gray-300';
+        }
+    };
+
+    const getExchangeRowColor = (exchange) => {
+        const exchangeLower = (exchange || 'binance').toLowerCase();
+        switch (exchangeLower) {
+            case 'binance': return 'border-l-4 border-l-yellow-500';
+            case 'bybit': return 'border-l-4 border-l-blue-500';
+            case 'okx': return 'border-l-4 border-l-purple-500';
+            default: return 'border-l-4 border-l-gray-500';
+        }
+    };
+
+    const getExchangeLogo = (exchange) => {
+        const exchangeLower = (exchange || 'binance').toLowerCase();
+        
+        // URLs de logos de exchanges (puedes usar CDN o almacenar localmente)
+        const logos = {
+            'binance': 'https://assets.coingecko.com/coins/images/825/small/binance-coin-logo.png?1547034615',
+            'bybit': 'https://brandlogos.net/wp-content/uploads/2022/09/bybit-logo_brandlogos.net_viubj-512x512.png',
+            'okx': 'https://images.seeklogo.com/logo-png/45/2/okx-logo-png_seeklogo-459094.png',
+        };
+        
+        return logos[exchangeLower] || logos['binance'];
     };
 
     return (
-        <AuthenticatedLayout>
+        <AppLayout header="Transacciones">
             <Head title="Transacciones" />
 
-            <div className="py-12">
-                <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    {/* Header */}
-                    <div className="mb-8">
-                        <h1 className="text-3xl font-bold text-gray-900">Gestión de Transacciones</h1>
-                        <p className="text-gray-600 mt-2">
-                            Sincroniza y gestiona tus transacciones de Binance
+            <div className="space-y-6">
+                {/* Header */}
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900">Gestión de Transacciones</h1>
+                    <p className="text-gray-600 mt-2">
+                        Sincroniza y gestiona tus transacciones de Binance, Bybit y otros exchanges
+                    </p>
+                    {stats.last_sync && (
+                        <p className="text-sm text-gray-500 mt-1">
+                            Última sincronización: {new Date(stats.last_sync).toLocaleString()}
                         </p>
+                    )}
+                </div>
+
+                {/* Sync Message */}
+                {syncMessage && (
+                    <div className={`p-4 rounded-lg ${
+                        syncMessageType === 'success' 
+                            ? 'bg-green-50 border border-green-200 text-green-800' 
+                            : 'bg-red-50 border border-red-200 text-red-800'
+                    }`}>
+                        <div className="flex items-center justify-between">
+                            <span>{syncMessage}</span>
+                            <button 
+                                onClick={() => {
+                                    setSyncMessage(null);
+                                    setSyncMessageType(null);
+                                }}
+                                className="ml-4 text-gray-500 hover:text-gray-700"
+                            >
+                                ×
+                            </button>
+                        </div>
                     </div>
+                )}
 
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">Total Transacciones</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-2xl font-bold">{stats.total_transactions}</div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">Completadas</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-2xl font-bold text-green-600">{stats.completed_transactions}</div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">Pendientes</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-2xl font-bold text-yellow-600">{stats.pending_transactions}</div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                                <CardTitle className="text-sm font-medium">Entradas Manuales</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="text-2xl font-bold text-blue-600">{stats.manual_entries}</div>
-                            </CardContent>
-                        </Card>
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="bg-white overflow-hidden shadow rounded-lg">
+                        <div className="p-5">
+                            <div className="text-sm font-medium text-gray-500">Total Transacciones</div>
+                            <div className="mt-1 text-3xl font-semibold text-gray-900">{stats.total_transactions}</div>
+                        </div>
                     </div>
-
-                    {/* Filters and Actions */}
-                    <Card className="mb-6">
-                        <CardHeader>
-                            <CardTitle>Filtros y Acciones</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                                <div>
-                                    <Label htmlFor="search">Buscar</Label>
-                                    <Input
-                                        id="search"
-                                        placeholder="Número de orden..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                    />
-                                </div>
-                                <div>
-                                    <Label htmlFor="type">Tipo</Label>
-                                    <Select value={selectedType} onValueChange={setSelectedType}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Todos los tipos" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">Todos los tipos</SelectItem>
-                                            {filterOptions.transaction_types.map(type => (
-                                                <SelectItem key={type} value={type}>
-                                                    {type.replace('_', ' ').toUpperCase()}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <Label htmlFor="status">Estado</Label>
-                                    <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Todos los estados" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">Todos los estados</SelectItem>
-                                            {filterOptions.statuses.map(status => (
-                                                <SelectItem key={status} value={status}>
-                                                    {status.toUpperCase()}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <Label htmlFor="asset">Activo</Label>
-                                    <Select value={selectedAsset} onValueChange={setSelectedAsset}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Todos los activos" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="">Todos los activos</SelectItem>
-                                            {filterOptions.asset_types.map(asset => (
-                                                <SelectItem key={asset} value={asset}>
-                                                    {asset}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                    <div className="bg-white overflow-hidden shadow rounded-lg">
+                        <div className="p-5">
+                            <div className="text-sm font-medium text-gray-500">Completadas</div>
+                            <div className="mt-1 text-3xl font-semibold text-green-600">{stats.completed_transactions}</div>
+                        </div>
+                    </div>
+                    <div className="bg-white overflow-hidden shadow rounded-lg">
+                        <div className="p-5">
+                            <div className="text-sm font-medium text-gray-500">Pendientes</div>
+                            <div className="mt-1 text-3xl font-semibold text-yellow-600">{stats.pending_transactions}</div>
+                        </div>
+                    </div>
+                    {enrichmentStats && enrichmentStats.total_p2p > 0 && (
+                        <div className="bg-white overflow-hidden shadow rounded-lg">
+                            <div className="p-5">
+                                <div className="text-sm font-medium text-gray-500">Pendientes Enriquecimiento</div>
+                                <div className="mt-1 text-3xl font-semibold text-yellow-600">{enrichmentStats.pending || 0}</div>
+                                {enrichmentStats.has_active_enrichment && (
+                                    <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
+                                        <span className="animate-pulse">●</span>
+                                        <span>Procesando</span>
+                                    </div>
+                                )}
                             </div>
+                        </div>
+                    )}
+                </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <Label>Fecha Desde</Label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                className={cn(
-                                                    "w-full justify-start text-left font-normal",
-                                                    !dateFrom && "text-muted-foreground"
-                                                )}
-                                            >
-                                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                                {dateFrom ? format(dateFrom, "PPP") : "Seleccionar fecha"}
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0">
-                                            <CalendarComponent
-                                                mode="single"
-                                                selected={dateFrom}
-                                                onSelect={setDateFrom}
-                                                initialFocus
+                {/* Filters and Actions */}
+                <div className="bg-white shadow rounded-lg">
+                    <div className="p-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">Filtros y Acciones</h3>
+                        
+                        {/* Exchange Filter - Badges clickeables */}
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Exchange</label>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => {
+                                        setSelectedExchange('');
+                                        handleSearchWithExchange('');
+                                    }}
+                                    className={`inline-flex items-center px-4 py-2.5 rounded-lg text-sm font-medium border-2 transition-all duration-200 ${
+                                        selectedExchange === '' 
+                                            ? 'bg-gray-100 text-gray-800 border-gray-400 shadow-md scale-105' 
+                                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50 hover:shadow-sm'
+                                    }`}
+                                >
+                                    <span className="mr-2 text-base">🌐</span>
+                                    Todos
+                                </button>
+                                {filterOptions.exchanges && filterOptions.exchanges.map(exchange => {
+                                    const isSelected = selectedExchange === exchange;
+                                    const exchangeLower = (exchange || 'binance').toLowerCase();
+                                    
+                                    let selectedClasses = '';
+                                    let unselectedClasses = 'bg-white border-gray-300 hover:shadow-md';
+                                    
+                                    if (exchangeLower === 'binance') {
+                                        selectedClasses = 'bg-yellow-100 text-yellow-800 border-yellow-400';
+                                        unselectedClasses += ' hover:bg-yellow-50 hover:border-yellow-300 hover:text-yellow-700';
+                                    } else if (exchangeLower === 'bybit') {
+                                        selectedClasses = 'bg-blue-100 text-blue-800 border-blue-400';
+                                        unselectedClasses += ' hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700';
+                                    } else if (exchangeLower === 'okx') {
+                                        selectedClasses = 'bg-purple-100 text-purple-800 border-purple-400';
+                                        unselectedClasses += ' hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700';
+                                    } else {
+                                        selectedClasses = 'bg-gray-100 text-gray-800 border-gray-400';
+                                        unselectedClasses += ' hover:bg-gray-50 hover:border-gray-300';
+                                    }
+                                    
+                                    return (
+                                        <button
+                                            key={exchange}
+                                            onClick={() => {
+                                                setSelectedExchange(exchange);
+                                                handleSearchWithExchange(exchange);
+                                            }}
+                                            className={`inline-flex items-center px-4 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all duration-200 ${
+                                                isSelected 
+                                                    ? `${selectedClasses} shadow-md scale-105` 
+                                                    : unselectedClasses
+                                            }`}
+                                        >
+                                            <img 
+                                                src={getExchangeLogo(exchange)} 
+                                                alt={getExchangeName(exchange)}
+                                                className="w-5 h-5 mr-2 rounded-full"
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                }}
                                             />
-                                        </PopoverContent>
-                                    </Popover>
+                                            {getExchangeName(exchange)}
+                                            {isSelected && (
+                                                <svg className="w-4 h-4 ml-2" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Buscar</label>
+                                <input
+                                    type="text"
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    placeholder="Número de orden..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                                <select
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    value={selectedType}
+                                    onChange={(e) => setSelectedType(e.target.value)}
+                                >
+                                    <option value="">Todos los tipos</option>
+                                    {filterOptions.transaction_types.map(type => (
+                                        <option key={type} value={type}>
+                                            {type.replace('_', ' ').toUpperCase()}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
+                                <select
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    value={selectedStatus}
+                                    onChange={(e) => setSelectedStatus(e.target.value)}
+                                >
+                                    <option value="">Todos los estados</option>
+                                    {filterOptions.statuses.map(status => (
+                                        <option key={status} value={status}>
+                                            {status.toUpperCase()}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleSearch}
+                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                                Buscar
+                            </button>
+                            <button
+                                onClick={() => setSyncDialogOpen(true)}
+                                disabled={isSyncing}
+                                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                            >
+                                {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Sync Dialog */}
+                {syncDialogOpen && (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                        <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                            <div className="mt-3">
+                                <h3 className="text-lg font-medium text-gray-900 mb-4">Sincronizar Transacciones</h3>
+                                <p className="text-sm text-gray-500 mb-4">Selecciona el período de tiempo para sincronizar:</p>
+                                <div className="grid grid-cols-2 gap-2 mb-4">
+                                    <button
+                                        onClick={() => handleSync(1)}
+                                        disabled={isSyncing}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Últimos 1 día
+                                    </button>
+                                    <button
+                                        onClick={() => handleSync(7)}
+                                        disabled={isSyncing}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Últimos 7 días
+                                    </button>
+                                    <button
+                                        onClick={() => handleSync(30)}
+                                        disabled={isSyncing}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Últimos 30 días
+                                    </button>
+                                    <button
+                                        onClick={() => handleSync(90)}
+                                        disabled={isSyncing}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Últimos 90 días
+                                    </button>
                                 </div>
-                                <div>
-                                    <Label>Fecha Hasta</Label>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                            <Button
-                                                variant="outline"
-                                                className={cn(
-                                                    "w-full justify-start text-left font-normal",
-                                                    !dateTo && "text-muted-foreground"
-                                                )}
-                                            >
-                                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                                {dateTo ? format(dateTo, "PPP") : "Seleccionar fecha"}
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0">
-                                            <CalendarComponent
-                                                mode="single"
-                                                selected={dateTo}
-                                                onSelect={setDateTo}
-                                                initialFocus
-                                            />
-                                        </PopoverContent>
-                                    </Popover>
+                                {isSyncing && (
+                                    <div className="flex items-center gap-2 text-blue-600 mb-4">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                        <span>Sincronizando transacciones, por favor espera...</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-end">
+                                    <button
+                                        onClick={() => {
+                                            setSyncDialogOpen(false);
+                                            setSyncMessage(null);
+                                        }}
+                                        disabled={isSyncing}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Cancelar
+                                    </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
 
-                            <div className="flex gap-2">
-                                <Button onClick={handleSearch} className="flex items-center gap-2">
-                                    <Search className="h-4 w-4" />
-                                    Buscar
-                                </Button>
-                                <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
-                                    <DialogTrigger asChild>
-                                        <Button variant="outline" className="flex items-center gap-2">
-                                            <RefreshCw className="h-4 w-4" />
-                                            Sincronizar
-                                        </Button>
-                                    </DialogTrigger>
-                                    <DialogContent>
-                                        <DialogHeader>
-                                            <DialogTitle>Sincronizar Transacciones</DialogTitle>
-                                        </DialogHeader>
-                                        <div className="space-y-4">
-                                            <p>¿Deseas sincronizar las transacciones de los últimos 7 días?</p>
-                                            <div className="flex justify-end gap-2">
-                                                <Button variant="outline" onClick={() => setSyncDialogOpen(false)}>
-                                                    Cancelar
-                                                </Button>
-                                                <Button onClick={handleSync} disabled={isSyncing}>
-                                                    {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </DialogContent>
-                                </Dialog>
-                                <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
-                                    <DialogTrigger asChild>
-                                        <Button variant="outline" className="flex items-center gap-2">
-                                            <Plus className="h-4 w-4" />
-                                            Entrada Manual
-                                        </Button>
-                                    </DialogTrigger>
-                                    <DialogContent className="max-w-2xl">
-                                        <DialogHeader>
-                                            <DialogTitle>Crear Transacción Manual</DialogTitle>
-                                        </DialogHeader>
-                                        <div className="space-y-4">
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <Label htmlFor="order_number">Número de Orden</Label>
-                                                    <Input
-                                                        id="order_number"
-                                                        value={manualForm.order_number}
-                                                        onChange={(e) => setManualForm({...manualForm, order_number: e.target.value})}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <Label htmlFor="asset_type">Activo</Label>
-                                                    <Input
-                                                        id="asset_type"
-                                                        value={manualForm.asset_type}
-                                                        onChange={(e) => setManualForm({...manualForm, asset_type: e.target.value})}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <Label htmlFor="fiat_type">Fiat</Label>
-                                                    <Input
-                                                        id="fiat_type"
-                                                        value={manualForm.fiat_type}
-                                                        onChange={(e) => setManualForm({...manualForm, fiat_type: e.target.value})}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <Label htmlFor="order_type">Tipo de Orden</Label>
-                                                    <Select value={manualForm.order_type} onValueChange={(value) => setManualForm({...manualForm, order_type: value})}>
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Seleccionar tipo" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="BUY">BUY</SelectItem>
-                                                            <SelectItem value="SELL">SELL</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                                <div>
-                                                    <Label htmlFor="quantity">Cantidad</Label>
-                                                    <Input
-                                                        id="quantity"
-                                                        type="number"
-                                                        step="0.00000001"
-                                                        value={manualForm.quantity}
-                                                        onChange={(e) => setManualForm({...manualForm, quantity: e.target.value})}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <Label htmlFor="price">Precio</Label>
-                                                    <Input
-                                                        id="price"
-                                                        type="number"
-                                                        step="0.00000001"
-                                                        value={manualForm.price}
-                                                        onChange={(e) => setManualForm({...manualForm, price: e.target.value})}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <Label htmlFor="total_price">Precio Total</Label>
-                                                    <Input
-                                                        id="total_price"
-                                                        type="number"
-                                                        step="0.00000001"
-                                                        value={manualForm.total_price}
-                                                        onChange={(e) => setManualForm({...manualForm, total_price: e.target.value})}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <Label htmlFor="status">Estado</Label>
-                                                    <Select value={manualForm.status} onValueChange={(value) => setManualForm({...manualForm, status: value})}>
-                                                        <SelectTrigger>
-                                                            <SelectValue placeholder="Seleccionar estado" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="completed">Completado</SelectItem>
-                                                            <SelectItem value="pending">Pendiente</SelectItem>
-                                                            <SelectItem value="processing">Procesando</SelectItem>
-                                                            <SelectItem value="cancelled">Cancelado</SelectItem>
-                                                            <SelectItem value="failed">Fallido</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <Label htmlFor="notes">Notas</Label>
-                                                <Textarea
-                                                    id="notes"
-                                                    value={manualForm.notes}
-                                                    onChange={(e) => setManualForm({...manualForm, notes: e.target.value})}
-                                                />
-                                            </div>
-                                            <div className="flex justify-end gap-2">
-                                                <Button variant="outline" onClick={() => setShowManualEntry(false)}>
-                                                    Cancelar
-                                                </Button>
-                                                <Button onClick={handleManualEntry}>
-                                                    Crear Transacción
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </DialogContent>
-                                </Dialog>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Transactions Table */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Transacciones</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Orden</TableHead>
-                                        <TableHead>Tipo</TableHead>
-                                        <TableHead>Activo</TableHead>
-                                        <TableHead>Cantidad</TableHead>
-                                        <TableHead>Precio</TableHead>
-                                        <TableHead>Total</TableHead>
-                                        <TableHead>Estado</TableHead>
-                                        <TableHead>Fecha</TableHead>
-                                        <TableHead>Acciones</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {transactions.data.map((transaction) => (
-                                        <TableRow key={transaction.id}>
-                                            <TableCell className="font-mono text-sm">
-                                                {transaction.order_number}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge variant={getTypeBadgeVariant(transaction.transaction_type)}>
-                                                    {transaction.transaction_type.replace('_', ' ').toUpperCase()}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                {transaction.asset_type}
-                                                {transaction.fiat_type && (
-                                                    <span className="text-gray-500">/{transaction.fiat_type}</span>
-                                                )}
-                                            </TableCell>
-                                            <TableCell>{transaction.quantity}</TableCell>
-                                            <TableCell>{transaction.price}</TableCell>
-                                            <TableCell>{transaction.total_price}</TableCell>
-                                            <TableCell>
-                                                <Badge variant={getStatusBadgeVariant(transaction.status)}>
-                                                    {transaction.status.toUpperCase()}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                {transaction.binance_create_time ? 
-                                                    new Date(transaction.binance_create_time).toLocaleDateString() : 
-                                                    '-'
-                                                }
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="flex gap-1">
-                                                    <Button variant="outline" size="sm">
-                                                        Ver
-                                                    </Button>
-                                                    {transaction.is_manual_entry && (
-                                                        <Button variant="outline" size="sm">
+                {/* Transactions Table */}
+                <div className="bg-white shadow rounded-lg overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                        <h3 className="text-lg font-medium text-gray-900">Transacciones</h3>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setViewMode('table')}
+                                className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                                    viewMode === 'table'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
+                            >
+                                Tabla
+                            </button>
+                            <button
+                                onClick={() => setViewMode('cards')}
+                                className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                                    viewMode === 'cards'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
+                            >
+                                Tarjetas
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {viewMode === 'table' ? (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Orden</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Exchange</th>
+                                        {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th> */}
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Compra/Venta</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Activo</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Método de Pago</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo ID</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Número ID</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {transactions.data && transactions.data.length > 0 ? (
+                                        transactions.data.map((transaction) => {
+                                            const exchangeLower = (transaction.exchange || 'binance').toLowerCase();
+                                            const exchangeBgColor = exchangeLower === 'binance' ? 'bg-yellow-50/20' : 
+                                                                    exchangeLower === 'bybit' ? 'bg-blue-50/20' : 
+                                                                    exchangeLower === 'okx' ? 'bg-purple-50/20' : 'bg-gray-50/20';
+                                            const orderTypeBg = transaction.order_type === 'BUY' ? 'bg-green-50/30' : 
+                                                               transaction.order_type === 'SELL' ? 'bg-red-50/30' : '';
+                                            
+                                            return (
+                                            <tr key={transaction.id} className={`${orderTypeBg} ${getExchangeRowColor(transaction.exchange)} ${exchangeBgColor}`}>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                                                    {transaction.order_number || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold border whitespace-nowrap ${getExchangeBadgeColor(transaction.exchange)}`}>
+                                                        <img 
+                                                            src={getExchangeLogo(transaction.exchange)} 
+                                                            alt={getExchangeName(transaction.exchange)}
+                                                            className="w-4 h-4 mr-2 rounded-full flex-shrink-0"
+                                                            onError={(e) => {
+                                                                e.target.style.display = 'none';
+                                                            }}
+                                                        />
+                                                        <span className="whitespace-nowrap">{getExchangeName(transaction.exchange)}</span>
+                                                    </span>
+                                                </td>
+                                                {/* <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeBadgeColor(transaction.transaction_type)}`}>
+                                                        {transaction.transaction_type.replace('_', ' ').toUpperCase()}
+                                                    </span>
+                                                </td> */}
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    {getOrderTypeBadge(transaction.order_type)}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                    {transaction.asset_type}
+                                                    {transaction.fiat_type && (
+                                                        <span className="text-gray-500">/{transaction.fiat_type}</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatNumber(transaction.quantity)}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatNumber(transaction.price)}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatNumber(transaction.total_price)}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                    {transaction.payment_method || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                    {transaction.counter_party || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                    {transaction.dni_type || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                                    {transaction.counter_party_dni || '-'}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(transaction.status)}`}>
+                                                            {transaction.status.toUpperCase()}
+                                                        </span>
+                                                        {transaction.enrichment_status && 
+                                                         transaction.enrichment_status !== 'pending' && 
+                                                         transaction.enrichment_status !== 'completed' && (
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEnrichmentBadgeColor(transaction.enrichment_status)}`}>
+                                                                {getEnrichmentBadgeText(transaction.enrichment_status)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {transaction.binance_create_time ? 
+                                                        new Date(transaction.binance_create_time).toLocaleDateString('es-CO', {
+                                                            year: 'numeric',
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            hour: '2-digit',
+                                                            minute: '2-digit'
+                                                        }) : 
+                                                        '-'
+                                                    }
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                    <div className="flex space-x-2">
+                                                        <Link
+                                                            href={`/transactions/${transaction.id}`}
+                                                            className="text-indigo-600 hover:text-indigo-900"
+                                                        >
+                                                            Ver
+                                                        </Link>
+                                                        <Link
+                                                            href={`/transactions/${transaction.id}/edit`}
+                                                            className="text-green-600 hover:text-green-900"
+                                                        >
                                                             Editar
-                                                        </Button>
+                                                        </Link>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            );
+                                        })
+                                    ) : (
+                                        <tr>
+                                            <td colSpan="15" className="px-6 py-4 text-center text-sm text-gray-500">
+                                                No hay transacciones. Haz clic en "Sincronizar" para obtener tus transacciones.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <div className="p-6">
+                                    {transactions.data && transactions.data.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {transactions.data.map((transaction) => {
+                                        const exchangeLower = (transaction.exchange || 'binance').toLowerCase();
+                                        const exchangeBorderColor = exchangeLower === 'binance' ? 'border-yellow-400' : 
+                                                                    exchangeLower === 'bybit' ? 'border-blue-400' : 
+                                                                    exchangeLower === 'okx' ? 'border-purple-400' : 'border-gray-300';
+                                        const exchangeBgColor = exchangeLower === 'binance' ? 'bg-yellow-50/30' : 
+                                                                    exchangeLower === 'bybit' ? 'bg-blue-50/30' : 
+                                                                    exchangeLower === 'okx' ? 'bg-purple-50/30' : 'bg-gray-50/30';
+                                        const orderTypeBorder = transaction.order_type === 'BUY' ? 'border-green-300' : 
+                                                               transaction.order_type === 'SELL' ? 'border-red-300' : 'border-gray-200';
+                                        const orderTypeBg = transaction.order_type === 'BUY' ? 'bg-green-50/30' : 
+                                                           transaction.order_type === 'SELL' ? 'bg-red-50/30' : 'bg-white';
+                                        
+                                        return (
+                                        <div 
+                                            key={transaction.id}
+                                            className={`border-2 rounded-lg shadow-sm p-6 ${exchangeBorderColor} ${orderTypeBorder} ${orderTypeBg} ${exchangeBgColor} relative overflow-hidden`}
+                                        >
+                                            {/* Exchange indicator bar */}
+                                            {(() => {
+                                                const exchangeLower = (transaction.exchange || 'binance').toLowerCase();
+                                                const barColor = exchangeLower === 'binance' ? 'bg-yellow-500' : 
+                                                                exchangeLower === 'bybit' ? 'bg-blue-500' : 
+                                                                exchangeLower === 'okx' ? 'bg-purple-500' : 'bg-gray-500';
+                                                return <div className={`absolute top-0 left-0 right-0 h-1 ${barColor}`}></div>;
+                                            })()}
+                                            {/* Header */}
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border whitespace-nowrap flex-shrink-0 ${getExchangeBadgeColor(transaction.exchange)}`}>
+                                                            <img 
+                                                                src={getExchangeLogo(transaction.exchange)} 
+                                                                alt={getExchangeName(transaction.exchange)}
+                                                                className="w-4 h-4 mr-1.5 rounded-full flex-shrink-0"
+                                                                onError={(e) => {
+                                                                    e.target.style.display = 'none';
+                                                                }}
+                                                            />
+                                                            <span className="whitespace-nowrap">{getExchangeName(transaction.exchange)}</span>
+                                                        </span>
+                                                        <div className="font-mono text-sm font-semibold text-gray-900">
+                                                            {transaction.order_number || 'Sin número'}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeBadgeColor(transaction.transaction_type)}`}>
+                                                            {transaction.transaction_type.replace('_', ' ').toUpperCase()}
+                                                        </span>
+                                                        {getOrderTypeBadge(transaction.order_type)}
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col gap-1 items-end">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(transaction.status)}`}>
+                                                        {transaction.status.toUpperCase()}
+                                                    </span>
+                                                    {transaction.enrichment_status && 
+                                                     transaction.enrichment_status !== 'pending' && 
+                                                     transaction.enrichment_status !== 'completed' && (
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEnrichmentBadgeColor(transaction.enrichment_status)}`}>
+                                                            {getEnrichmentBadgeText(transaction.enrichment_status)}
+                                                        </span>
                                                     )}
                                                 </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
+                                            </div>
 
-                            {/* Pagination */}
-                            {transactions.links && (
-                                <div className="mt-4 flex justify-center">
-                                    <nav className="flex space-x-2">
-                                        {transactions.links.map((link, index) => (
-                                            <Button
-                                                key={index}
-                                                variant={link.active ? "default" : "outline"}
-                                                size="sm"
-                                                dangerouslySetInnerHTML={{ __html: link.label }}
-                                                onClick={() => link.url && (window.location.href = link.url)}
-                                                disabled={!link.url}
-                                            />
-                                        ))}
-                                    </nav>
+                                            {/* Asset Info */}
+                                            <div className="mb-4 pb-4 border-b border-gray-200">
+                                                <div className="text-lg font-semibold text-gray-900">
+                                                    {transaction.asset_type}
+                                                    {transaction.fiat_type && (
+                                                        <span className="text-gray-500 text-base">/{transaction.fiat_type}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Financial Details */}
+                                            <div className="space-y-3 mb-4">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-sm text-gray-600">Cantidad:</span>
+                                                    <span className="text-sm font-semibold text-gray-900">{formatNumber(transaction.quantity)} {transaction.asset_type}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-sm text-gray-600">Precio Unitario:</span>
+                                                    <span className="text-sm font-semibold text-gray-900">
+                                                        {formatNumber(transaction.price)} {transaction.fiat_type || ''}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                                                    <span className="text-sm font-medium text-gray-700">Total:</span>
+                                                    <span className="text-base font-bold text-gray-900">
+                                                        {formatNumber(transaction.total_price)} {transaction.fiat_type || ''}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Fees and Commissions */}
+                                            {(transaction.commission > 0 || transaction.taker_fee > 0 || transaction.network_fee > 0) && (
+                                                <div className="mb-4 pb-4 border-b border-gray-200 space-y-2">
+                                                    <div className="text-xs font-medium text-gray-500 uppercase mb-2">Comisiones y Fees</div>
+                                                    {transaction.commission > 0 && (
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">Comisión:</span>
+                                                            <span className="text-xs font-semibold text-gray-700">{formatNumber(transaction.commission)}</span>
+                                                        </div>
+                                                    )}
+                                                    {transaction.taker_fee > 0 && (
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">Taker Fee:</span>
+                                                            <span className="text-xs font-semibold text-gray-700">{formatNumber(transaction.taker_fee)}</span>
+                                                        </div>
+                                                    )}
+                                                    {transaction.network_fee > 0 && (
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">Network Fee:</span>
+                                                            <span className="text-xs font-semibold text-gray-700">{formatNumber(transaction.network_fee)}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Payment and Party Info */}
+                                            {(transaction.payment_method || transaction.counter_party) && (
+                                                <div className="mb-4 pb-4 border-b border-gray-200 space-y-2">
+                                                    <div className="text-xs font-medium text-gray-500 uppercase mb-2">Información de Pago</div>
+                                                    {transaction.payment_method && (
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">Método de Pago:</span>
+                                                            <span className="text-xs font-semibold text-gray-900">{transaction.payment_method}</span>
+                                                        </div>
+                                                    )}
+                                                    {transaction.counter_party && (
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">Cliente:</span>
+                                                            <span className="text-xs font-semibold text-gray-900">{transaction.counter_party}</span>
+                                                        </div>
+                                                    )}
+                                                    {transaction.dni_type && (
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">Tipo ID:</span>
+                                                            <span className="text-xs font-semibold text-gray-900">{transaction.dni_type}</span>
+                                                        </div>
+                                                    )}
+                                                    {transaction.counter_party_dni && (
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">Número ID:</span>
+                                                            <span className="text-xs font-semibold text-gray-900">{transaction.counter_party_dni}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Actions */}
+                                            <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end space-x-2">
+                                                <Link
+                                                    href={`/transactions/${transaction.id}`}
+                                                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                                >
+                                                    Ver
+                                                </Link>
+                                                <Link
+                                                    href={`/transactions/${transaction.id}/edit`}
+                                                    className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                                                >
+                                                    Editar
+                                                </Link>
+                                            </div>
+
+                                            {/* Additional Info */}
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-xs text-gray-600">Fecha:</span>
+                                                    <span className="text-xs font-medium text-gray-700">
+                                                        {transaction.binance_create_time ? 
+                                                            new Date(transaction.binance_create_time).toLocaleDateString('es-CO', {
+                                                                year: 'numeric',
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit'
+                                                            }) : 
+                                                            '-'
+                                                        }
+                                                    </span>
+                                                </div>
+                                                {transaction.advertisement_order_number && (
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-xs text-gray-600">Anuncio:</span>
+                                                        <span className="text-xs font-mono text-gray-700">{transaction.advertisement_order_number}</span>
+                                                    </div>
+                                                )}
+                                                {transaction.notes && (
+                                                    <div className="pt-2 border-t border-gray-200">
+                                                        <div className="text-xs text-gray-600 mb-1">Notas:</div>
+                                                        <div className="text-xs text-gray-700 italic">{transaction.notes}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="text-center py-12">
+                                    <p className="text-sm text-gray-500">
+                                        No hay transacciones. Haz clic en "Sincronizar" para obtener tus transacciones.
+                                    </p>
                                 </div>
                             )}
-                        </CardContent>
-                    </Card>
+                        </div>
+                    )}
+
+                    {/* Pagination */}
+                    {transactions.links && transactions.links.length > 3 && (
+                        <div className="px-6 py-4 border-t border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div className="text-sm text-gray-700">
+                                    Mostrando {transactions.from} a {transactions.to} de {transactions.total} resultados
+                                </div>
+                                <div className="flex space-x-2">
+                                    {transactions.links.map((link, index) => (
+                                        <button
+                                            key={index}
+                                            onClick={() => link.url && (window.location.href = link.url)}
+                                            disabled={!link.url}
+                                            className={`px-3 py-2 text-sm font-medium rounded-md ${
+                                                link.active
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                            dangerouslySetInnerHTML={{ __html: link.label }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
-        </AuthenticatedLayout>
+        </AppLayout>
     );
 }

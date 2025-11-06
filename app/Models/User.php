@@ -46,4 +46,28 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    /**
+     * Get the user's Binance credential.
+     */
+    public function binanceCredential()
+    {
+        return $this->hasOne(BinanceCredential::class);
+    }
+
+    /**
+     * Get the user's Bybit credential.
+     */
+    public function bybitCredential()
+    {
+        return $this->hasOne(BybitCredential::class);
+    }
+
+    /**
+     * Get the user's OKX credential.
+     */
+    public function okxCredential()
+    {
+        return $this->hasOne(OKXCredential::class);
+    }
 }

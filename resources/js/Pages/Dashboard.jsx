@@ -1,35 +1,132 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import AppLayout from '@/Layouts/AppLayout';
 import BotConfiguration from '@/Components/BotConfiguration';
+import {
+    BarChart,
+    Bar,
+    LineChart,
+    Line,
+    PieChart,
+    Pie,
+    Cell,
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
+    ResponsiveContainer,
+} from 'recharts';
 
-export default function Dashboard({ stats }) {
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+export default function Dashboard({ stats, currency = 'USD', charts, recent_transactions = [] }) {
     const [activeTab, setActiveTab] = useState('overview');
+
+    // Mapeo de códigos de moneda a símbolos
+    const getCurrencySymbol = (currencyCode) => {
+        const symbols = {
+            'USD': '$',
+            'EUR': '€',
+            'COP': '$',
+            'ARS': '$',
+            'MXN': '$',
+            'BRL': 'R$',
+            'GBP': '£',
+        };
+        return symbols[currencyCode] || currencyCode;
+    };
+
+    const formatCurrency = (value) => {
+        if (!value || isNaN(value)) return `${getCurrencySymbol(currency)}0.00`;
+        const useDecimals = !['JPY'].includes(currency);
+        try {
+            return new Intl.NumberFormat('es-ES', {
+                style: 'currency',
+                currency: currency,
+                minimumFractionDigits: useDecimals ? 2 : 0,
+                maximumFractionDigits: useDecimals ? 2 : 0,
+            }).format(value);
+        } catch (e) {
+            return `${getCurrencySymbol(currency)}${value.toLocaleString('es-ES', {
+                minimumFractionDigits: useDecimals ? 2 : 0,
+                maximumFractionDigits: useDecimals ? 2 : 0,
+            })}`;
+        }
+    };
+
+    const formatNumber = (value) => {
+        if (!value || isNaN(value)) return '0';
+        return new Intl.NumberFormat('es-ES').format(value);
+    };
+
+    const formatDate = (dateString) => {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleDateString('es-ES', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
+
+    const getStatusColor = (status) => {
+        const colors = {
+            'completed': 'bg-green-100 text-green-800',
+            'pending': 'bg-yellow-100 text-yellow-800',
+            'processing': 'bg-blue-100 text-blue-800',
+            'cancelled': 'bg-gray-100 text-gray-800',
+            'failed': 'bg-red-100 text-red-800',
+        };
+        return colors[status] || 'bg-gray-100 text-gray-800';
+    };
+
+    const getOrderTypeColor = (type) => {
+        return type === 'BUY' ? 'text-green-600' : 'text-red-600';
+    };
 
     const statCards = [
         {
-            name: 'Total Transactions',
-            value: stats.total_transactions,
-            change: '+12%',
-            changeType: 'positive',
+            name: 'Total Transacciones',
+            value: formatNumber(stats.total_transactions),
+            subtitle: `${stats.completed_transactions} completadas`,
+            change: stats.success_rate > 0 ? `${stats.success_rate}% éxito` : null,
+            changeType: 'info',
+            icon: '📊',
+            color: 'blue',
         },
         {
-            name: 'Active Bots',
+            name: 'Volumen Total',
+            value: formatCurrency(stats.total_volume),
+            subtitle: `Hoy: ${formatCurrency(stats.today_volume)}`,
+            change: stats.volume_change_today !== 0 
+                ? `${stats.volume_change_today > 0 ? '+' : ''}${stats.volume_change_today.toFixed(1)}% vs ayer`
+                : null,
+            changeType: stats.volume_change_today >= 0 ? 'positive' : 'negative',
+            icon: '💰',
+            color: 'green',
+        },
+        {
+            name: 'Bots Activos',
             value: stats.active_bots,
-            change: '+2',
-            changeType: 'positive',
+            subtitle: stats.active_bots > 0 ? 'Funcionando' : 'Sin bots activos',
+            change: null,
+            changeType: 'info',
+            icon: '🤖',
+            color: 'purple',
         },
         {
-            name: 'Total Volume',
-            value: `$${stats.total_volume.toLocaleString()}`,
-            change: '+8.2%',
-            changeType: 'positive',
-        },
-        {
-            name: 'Profit/Loss',
-            value: `$${stats.profit_loss.toLocaleString()}`,
-            change: '+5.4%',
-            changeType: 'positive',
+            name: 'Comisiones Totales',
+            value: formatCurrency(stats.total_commissions),
+            subtitle: `Esta semana: ${formatCurrency(stats.this_week_volume)}`,
+            change: stats.volume_change_week !== 0
+                ? `${stats.volume_change_week > 0 ? '+' : ''}${stats.volume_change_week.toFixed(1)}% vs semana pasada`
+                : null,
+            changeType: stats.volume_change_week >= 0 ? 'positive' : 'negative',
+            icon: '💸',
+            color: 'yellow',
         },
     ];
 
@@ -70,32 +167,33 @@ export default function Dashboard({ stats }) {
                 {/* Stats Grid */}
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                     {statCards.map((card) => (
-                        <div key={card.name} className="bg-white overflow-hidden shadow rounded-lg">
+                        <div key={card.name} className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow">
                             <div className="p-5">
-                                <div className="flex items-center">
-                                    <div className="flex-shrink-0">
-                                        <div className="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
-                                            <span className="text-white text-sm font-medium">
-                                                {card.name.charAt(0)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="ml-5 w-0 flex-1">
-                                        <dl>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <span className="text-2xl">{card.icon}</span>
                                             <dt className="text-sm font-medium text-gray-500 truncate">
                                                 {card.name}
                                             </dt>
-                                            <dd className="flex items-baseline">
-                                                <div className="text-2xl font-semibold text-gray-900">
-                                                    {card.value}
-                                                </div>
-                                                <div className={`ml-2 flex items-baseline text-sm font-semibold ${
-                                                    card.changeType === 'positive' ? 'text-green-600' : 'text-red-600'
-                                                }`}>
-                                                    {card.change}
-                                                </div>
+                                        </div>
+                                        <dd className="text-2xl font-bold text-gray-900 mb-1">
+                                            {card.value}
+                                        </dd>
+                                        {card.subtitle && (
+                                            <dd className="text-xs text-gray-500 mb-2">
+                                                {card.subtitle}
                                             </dd>
-                                        </dl>
+                                        )}
+                                        {card.change && (
+                                            <dd className={`text-xs font-medium ${
+                                                card.changeType === 'positive' ? 'text-green-600' : 
+                                                card.changeType === 'negative' ? 'text-red-600' : 
+                                                'text-blue-600'
+                                            }`}>
+                                                {card.change}
+                                            </dd>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -103,25 +201,230 @@ export default function Dashboard({ stats }) {
                     ))}
                 </div>
 
-                {/* Main Content Area */}
-                <div className="bg-white shadow rounded-lg">
-                    <div className="px-4 py-5 sm:p-6">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                            Welcome to your Binance Trading Dashboard
+                {/* Gráficos principales */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Gráfico: Transacciones por día */}
+                    <div className="bg-white shadow rounded-lg p-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                            Actividad de los Últimos 7 Días
                         </h3>
-                        <div className="text-sm text-gray-500 space-y-2">
-                            <p>This is your central hub for managing your Binance trading activities.</p>
-                            <p>Here you can:</p>
-                            <ul className="list-disc list-inside ml-4 space-y-1">
-                                <li>Track your transaction history</li>
-                                <li>Monitor your trading bots</li>
-                                <li>Analyze your trading performance</li>
-                                <li>Configure automated trading strategies</li>
-                            </ul>
-                            <p className="mt-4 text-blue-600">
-                                Start by connecting your Binance API keys in the Settings section.
-                            </p>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <AreaChart data={charts.transactions_by_day || []}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis 
+                                    dataKey="date" 
+                                    tickFormatter={(value) => new Date(value).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}
+                                />
+                                <YAxis yAxisId="left" />
+                                <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => formatCurrency(value)} />
+                                <Tooltip 
+                                    formatter={(value, name) => {
+                                        if (name === 'volume') return formatCurrency(value);
+                                        return formatNumber(value);
+                                    }}
+                                    labelFormatter={(label) => new Date(label).toLocaleDateString('es-ES')}
+                                />
+                                <Legend />
+                                <Area yAxisId="left" type="monotone" dataKey="count" stackId="1" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.6} name="Operaciones" />
+                                <Line yAxisId="right" type="monotone" dataKey="volume" stroke="#10b981" strokeWidth={2} name="Volumen" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    {/* Gráfico: Compras vs Ventas */}
+                    <div className="bg-white shadow rounded-lg p-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                            Distribución por Tipo de Operación
+                        </h3>
+                        <ResponsiveContainer width="100%" height={250}>
+                            <PieChart>
+                                <Pie
+                                    data={charts.operations_by_type || []}
+                                    cx="50%"
+                                    cy="50%"
+                                    labelLine={false}
+                                    label={({ type, count, percent }) => `${type}: ${count} (${(percent * 100).toFixed(0)}%)`}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    dataKey="count"
+                                >
+                                    {(charts.operations_by_type || []).map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="mt-4 space-y-2">
+                            {(charts.operations_by_type || []).map((item) => (
+                                <div key={item.type} className="flex justify-between items-center text-sm">
+                                    <span className={`font-medium ${getOrderTypeColor(item.type)}`}>
+                                        {item.type}:
+                                    </span>
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-gray-600">{formatNumber(item.count)} ops</span>
+                                        <span className="text-gray-500">{formatCurrency(item.volume)}</span>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
+                    </div>
+                </div>
+
+                {/* Top Activos y Estado */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Top 5 Activos */}
+                    <div className="bg-white shadow rounded-lg p-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                            Top 5 Activos por Volumen
+                        </h3>
+                        <div className="space-y-3">
+                            {(charts.top_assets || []).map((asset, index) => (
+                                <div key={asset.asset} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center font-bold text-blue-600">
+                                            {index + 1}
+                                        </div>
+                                        <div>
+                                            <div className="font-medium text-gray-900">{asset.asset}</div>
+                                            <div className="text-xs text-gray-500">{formatNumber(asset.count)} operaciones</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-semibold text-gray-900">{formatCurrency(asset.volume)}</div>
+                                        <div className="text-xs text-gray-500">{currency}</div>
+                                    </div>
+                                </div>
+                            ))}
+                            {(!charts.top_assets || charts.top_assets.length === 0) && (
+                                <div className="text-center text-gray-500 py-8">
+                                    No hay datos de activos disponibles
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Operaciones por Estado */}
+                    <div className="bg-white shadow rounded-lg p-6">
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                            Estado de Transacciones
+                        </h3>
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie
+                                    data={charts.operations_by_status || []}
+                                    cx="50%"
+                                    cy="50%"
+                                    labelLine={false}
+                                    label={({ status, count, percent }) => `${status}: ${(percent * 100).toFixed(0)}%`}
+                                    outerRadius={70}
+                                    fill="#8884d8"
+                                    dataKey="count"
+                                >
+                                    {(charts.operations_by_status || []).map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="mt-4 space-y-2">
+                            {(charts.operations_by_status || []).map((item) => (
+                                <div key={item.status} className="flex justify-between items-center text-sm">
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(item.status)}`}>
+                                        {item.status}
+                                    </span>
+                                    <span className="text-gray-600 font-medium">{formatNumber(item.count)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Transacciones Recientes */}
+                <div className="bg-white shadow rounded-lg">
+                    <div className="px-4 py-5 sm:p-6 border-b border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-medium text-gray-900">
+                                Transacciones Recientes
+                            </h3>
+                            <Link 
+                                href="/transactions"
+                                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                Ver todas →
+                            </Link>
+                        </div>
+                    </div>
+                    <div className="overflow-hidden">
+                        {recent_transactions && recent_transactions.length > 0 ? (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Orden
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Tipo
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Activo
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Operación
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Monto
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Estado
+                                        </th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Fecha
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {recent_transactions.map((transaction) => (
+                                        <tr key={transaction.id} className="hover:bg-gray-50">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                                                {transaction.order_number.substring(0, 8)}...
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {transaction.transaction_type}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                {transaction.asset_type}
+                                            </td>
+                                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getOrderTypeColor(transaction.order_type)}`}>
+                                                {transaction.order_type || '-'}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                {formatCurrency(transaction.total_price || 0)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(transaction.status)}`}>
+                                                    {transaction.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {formatDate(transaction.binance_create_time)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <div className="px-6 py-12 text-center text-gray-500">
+                                <p>No hay transacciones recientes</p>
+                                <Link 
+                                    href="/transactions"
+                                    className="mt-4 inline-block text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                >
+                                    Ver todas las transacciones →
+                                </Link>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -129,59 +432,65 @@ export default function Dashboard({ stats }) {
                 <div className="bg-white shadow rounded-lg">
                     <div className="px-4 py-5 sm:p-6">
                         <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                            Quick Actions
+                            Acciones Rápidas
                         </h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            <button className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-gray-300">
+                            <Link 
+                                href="/transactions"
+                                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all"
+                            >
                                 <div>
                                     <span className="rounded-lg inline-flex p-3 bg-blue-50 text-blue-700 ring-4 ring-white">
                                         📊
                                     </span>
                                 </div>
                                 <div className="mt-4">
-                                    <h3 className="text-lg font-medium">
-                                        <span className="absolute inset-0" aria-hidden="true" />
-                                        View Transactions
+                                    <h3 className="text-lg font-medium text-gray-900">
+                                        Ver Transacciones
                                     </h3>
                                     <p className="mt-2 text-sm text-gray-500">
-                                        Check your recent trading activity
+                                        Revisa tu actividad comercial reciente
                                     </p>
                                 </div>
-                            </button>
+                            </Link>
 
-                            <button className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-gray-300">
+                            <Link 
+                                href="/reports"
+                                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-green-300 hover:shadow-md transition-all"
+                            >
                                 <div>
                                     <span className="rounded-lg inline-flex p-3 bg-green-50 text-green-700 ring-4 ring-white">
-                                        🤖
+                                        📈
                                     </span>
                                 </div>
                                 <div className="mt-4">
-                                    <h3 className="text-lg font-medium">
-                                        <span className="absolute inset-0" aria-hidden="true" />
-                                        Manage Bots
+                                    <h3 className="text-lg font-medium text-gray-900">
+                                        Ver Reportes
                                     </h3>
                                     <p className="mt-2 text-sm text-gray-500">
-                                        Configure and monitor your trading bots
+                                        Analiza tu rendimiento con gráficos detallados
                                     </p>
                                 </div>
-                            </button>
+                            </Link>
 
-                            <button className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-gray-300">
+                            <Link 
+                                href="/settings/exchanges"
+                                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-purple-300 hover:shadow-md transition-all"
+                            >
                                 <div>
                                     <span className="rounded-lg inline-flex p-3 bg-purple-50 text-purple-700 ring-4 ring-white">
                                         ⚙️
                                     </span>
                                 </div>
                                 <div className="mt-4">
-                                    <h3 className="text-lg font-medium">
-                                        <span className="absolute inset-0" aria-hidden="true" />
-                                        Settings
+                                    <h3 className="text-lg font-medium text-gray-900">
+                                        Configuración
                                     </h3>
                                     <p className="mt-2 text-sm text-gray-500">
-                                        Configure your API keys and preferences
+                                        Configura tus claves API y preferencias
                                     </p>
                                 </div>
-                            </button>
+                            </Link>
                         </div>
                     </div>
                 </div>

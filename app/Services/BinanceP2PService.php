@@ -425,15 +425,44 @@ class BinanceP2PService
     }
 
     /**
-     * Verificar conexión con Binance API
+     * Verificar conexión con Binance API usando el endpoint /api/v3/account
      */
     public function testConnection(): bool
     {
         try {
-            $response = Http::timeout(10)->get($this->baseUrl . '/friendly/c2c/portal/config');
-            return $response->successful();
+            // Usar la API principal de Binance para el test de conexión
+            $apiBaseUrl = $this->isTestnet 
+                ? 'https://testnet.binance.vision' 
+                : 'https://api.binance.com';
+            
+            // Generar timestamp y signature para autenticación
+            $timestamp = time() * 1000;
+            $queryString = http_build_query(['timestamp' => $timestamp]);
+            $signature = hash_hmac('sha256', $queryString, $this->secretKey);
+            
+            // Construir URL con parámetros
+            $url = $apiBaseUrl . '/api/v3/account?' . $queryString . '&signature=' . $signature;
+            
+            // Realizar request autenticado
+            $response = Http::withHeaders([
+                'X-MBX-APIKEY' => $this->apiKey,
+            ])->timeout(10)->get($url);
+            
+            // El endpoint retorna información de la cuenta si las credenciales son válidas
+            if ($response->successful()) {
+                $accountData = $response->json();
+                // Verificar que la respuesta contiene datos de cuenta válidos
+                return isset($accountData['accountType']) || isset($accountData['balances']);
+            }
+            
+            Log::error('Binance connection test failed', [
+                'status' => $response->status(),
+                'response' => $response->body()
+            ]);
+            
+            return false;
         } catch (\Exception $e) {
-            Log::error('Binance P2P connection test failed', [
+            Log::error('Binance connection test exception', [
                 'error' => $e->getMessage()
             ]);
             return false;

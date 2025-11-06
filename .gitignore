@@ -16,3 +16,6 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Binance P2P logs
+/storage/logs/binance_p2p/

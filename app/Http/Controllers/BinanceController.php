@@ -32,15 +32,14 @@ class BinanceController extends Controller
         ]);
 
         try {
-            $credentials = BinanceCredential::updateOrCreate(
-                ['user_id' => Auth::id()],
-                [
-                    'api_key' => $request->api_key,
-                    'secret_key' => $request->secret_key,
-                    'is_testnet' => $request->boolean('testnet', false),
-                    'is_active' => true,
-                ]
-            );
+            $credentials = BinanceCredential::firstOrNew(['user_id' => Auth::id()]);
+            
+            // Asignar valores usando los mutators
+            $credentials->api_key = $request->api_key;
+            $credentials->secret_key = $request->secret_key;
+            $credentials->is_testnet = $request->boolean('testnet', false);
+            $credentials->is_active = true;
+            $credentials->save();
 
             // Test connection
             $service = new BinanceP2PService($credentials);

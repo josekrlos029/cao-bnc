@@ -5,6 +5,9 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\BotController;
 use App\Http\Controllers\BinanceController;
 use App\Http\Controllers\TransactionController;
+use App\Http\Controllers\ExchangeCredentialsController;
+use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\SettingsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -29,6 +32,9 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     
+    // Settings Routes
+    Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
+    
     // Bot Configuration Routes
     Route::post('/bot/configuration', [BotController::class, 'saveConfiguration']);
     Route::get('/bot/configuration', [BotController::class, 'getConfiguration']);
@@ -46,8 +52,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/binance/p2p-ads', [BinanceController::class, 'getP2PAds']);
     Route::post('/binance/sync-p2p-ads', [BinanceController::class, 'syncP2PAds']);
     
-    // Binance Credentials
+    // Binance Credentials (mantener compatibilidad)
     Route::post('/binance/credentials', [BinanceController::class, 'storeCredentials']);
+    
+    // Exchange Credentials Management Routes
+    Route::get('/settings/exchanges', [ExchangeCredentialsController::class, 'index'])
+        ->name('settings.exchanges');
+    Route::post('/settings/exchanges/binance', [ExchangeCredentialsController::class, 'storeBinance']);
+    Route::post('/settings/exchanges/bybit', [ExchangeCredentialsController::class, 'storeBybit']);
+    Route::post('/settings/exchanges/okx', [ExchangeCredentialsController::class, 'storeOKX']);
+    Route::post('/settings/exchanges/{exchange}/test', [ExchangeCredentialsController::class, 'testConnection']);
+    Route::delete('/settings/exchanges/{exchange}', [ExchangeCredentialsController::class, 'deleteCredentials']);
     
     // Transaction Management Routes
     Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions.index');
@@ -62,6 +77,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/sync', [TransactionController::class, 'sync'])->name('transactions.sync');
     Route::get('/transactions/stats', [TransactionController::class, 'stats'])->name('transactions.stats');
     Route::post('/transactions/export', [TransactionController::class, 'export'])->name('transactions.export');
+    
+    // Reports Routes
+    Route::get('/reports', [ReportsController::class, 'index'])->name('reports.index');
 });
 
 require __DIR__.'/auth.php';

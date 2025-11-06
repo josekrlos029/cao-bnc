@@ -23,6 +23,9 @@
         "@headlessui/react": "^1.7.17",
         "@heroicons/react": "^2.0.18",
         "axios": "^1.6.4",
+        "date-fns": "^4.1.0",
+        "lucide-react": "^0.552.0",
+        "recharts": "^3.3.0",
         "ziggy-js": "^2.0.0"
     }
 }

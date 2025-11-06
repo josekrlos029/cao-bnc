@@ -4,14 +4,18 @@ import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
 export default function AppLayout({ children, header }) {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const { auth } = usePage().props;
+    const { auth, url } = usePage().props;
 
     const navigation = [
-        { name: 'Dashboard', href: '/dashboard', current: true },
-        { name: 'Transactions', href: '/transactions', current: false },
-        { name: 'Bots', href: '/bots', current: false },
-        { name: 'Settings', href: '/settings', current: false },
-    ];
+        { name: 'Dashboard', href: '/dashboard' },
+        { name: 'Transacciones', href: '/transactions' },
+        { name: 'Reportes', href: '/reports' },
+        { name: 'Bots', href: '/bots' },
+        { name: 'Configuraciones', href: '/settings' },
+    ].map(item => ({
+        ...item,
+        current: url.startsWith(item.href),
+    }));
 
     return (
         <>
