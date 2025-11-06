@@ -64,11 +64,34 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
 
     const formatDate = (dateString) => {
         if (!dateString) return '-';
+        
+        // Parsear la fecha como UTC para evitar conversión de zona horaria
+        if (typeof dateString === 'string' && dateString.includes('T')) {
+            const isoDate = new Date(dateString);
+            // Usar UTC para formatear sin conversión
+            const year = isoDate.getUTCFullYear();
+            const month = isoDate.getUTCMonth();
+            const day = isoDate.getUTCDate();
+            const hours = isoDate.getUTCHours();
+            const minutes = isoDate.getUTCMinutes();
+            
+            const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 
+                               'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+            
+            const formattedDate = `${day} de ${monthNames[month]} de ${year}`;
+            const period = hours >= 12 ? 'p. m.' : 'a. m.';
+            const displayHours = hours === 0 ? 12 : (hours > 12 ? hours - 12 : hours);
+            
+            return `${formattedDate}, ${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+        }
+        
+        // Fallback
         return new Date(dateString).toLocaleDateString('es-ES', {
             day: '2-digit',
             month: 'short',
             hour: '2-digit',
             minute: '2-digit',
+            timeZone: 'UTC'
         });
     };
 

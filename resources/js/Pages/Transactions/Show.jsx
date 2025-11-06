@@ -11,6 +11,41 @@ export default function TransactionsShow({ transaction }) {
         }).format(num);
     };
 
+    const formatDate = (dateString) => {
+        if (!dateString) return '-';
+        
+        // Parsear la fecha como UTC para evitar conversión de zona horaria
+        if (typeof dateString === 'string' && dateString.includes('T')) {
+            const isoDate = new Date(dateString);
+            // Usar UTC para formatear sin conversión
+            const year = isoDate.getUTCFullYear();
+            const month = isoDate.getUTCMonth();
+            const day = isoDate.getUTCDate();
+            const hours = isoDate.getUTCHours();
+            const minutes = isoDate.getUTCMinutes();
+            
+            const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 
+                               'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+            
+            const formattedDate = `${day} de ${monthNames[month]} de ${year}`;
+            const period = hours >= 12 ? 'p. m.' : 'a. m.';
+            const displayHours = hours === 0 ? 12 : (hours > 12 ? hours - 12 : hours);
+            
+            return `${formattedDate}, ${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+        }
+        
+        // Fallback
+        const date = new Date(dateString);
+        return date.toLocaleDateString('es-CO', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'UTC'
+        });
+    };
+
     const getStatusBadgeColor = (status) => {
         switch (status) {
             case 'completed': return 'bg-green-100 text-green-800';
@@ -241,13 +276,7 @@ export default function TransactionsShow({ transaction }) {
                                     <div>
                                         <dt className="text-sm font-medium text-gray-500">Fecha de Creación (Binance)</dt>
                                         <dd className="mt-1 text-sm text-gray-900">
-                                            {new Date(transaction.binance_create_time).toLocaleString('es-CO', {
-                                                year: 'numeric',
-                                                month: 'short',
-                                                day: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })}
+                                            {formatDate(transaction.binance_create_time)}
                                         </dd>
                                     </div>
                                 )}
@@ -255,13 +284,7 @@ export default function TransactionsShow({ transaction }) {
                                     <div>
                                         <dt className="text-sm font-medium text-gray-500">Fecha de Actualización (Binance)</dt>
                                         <dd className="mt-1 text-sm text-gray-900">
-                                            {new Date(transaction.binance_update_time).toLocaleString('es-CO', {
-                                                year: 'numeric',
-                                                month: 'short',
-                                                day: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })}
+                                            {formatDate(transaction.binance_update_time)}
                                         </dd>
                                     </div>
                                 )}
@@ -269,38 +292,20 @@ export default function TransactionsShow({ transaction }) {
                                     <div>
                                         <dt className="text-sm font-medium text-gray-500">Última Sincronización</dt>
                                         <dd className="mt-1 text-sm text-gray-900">
-                                            {new Date(transaction.last_synced_at).toLocaleString('es-CO', {
-                                                year: 'numeric',
-                                                month: 'short',
-                                                day: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })}
+                                            {formatDate(transaction.last_synced_at)}
                                         </dd>
                                     </div>
                                 )}
                                 <div>
                                     <dt className="text-sm font-medium text-gray-500">Creado en el Sistema</dt>
                                     <dd className="mt-1 text-sm text-gray-900">
-                                        {new Date(transaction.created_at).toLocaleString('es-CO', {
-                                            year: 'numeric',
-                                            month: 'short',
-                                            day: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
+                                        {formatDate(transaction.created_at)}
                                     </dd>
                                 </div>
                                 <div>
                                     <dt className="text-sm font-medium text-gray-500">Actualizado en el Sistema</dt>
                                     <dd className="mt-1 text-sm text-gray-900">
-                                        {new Date(transaction.updated_at).toLocaleString('es-CO', {
-                                            year: 'numeric',
-                                            month: 'short',
-                                            day: 'numeric',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
+                                        {formatDate(transaction.updated_at)}
                                     </dd>
                                 </div>
                             </dl>

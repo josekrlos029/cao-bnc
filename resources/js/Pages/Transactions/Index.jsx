@@ -13,6 +13,8 @@ export default function TransactionsIndex({
     const [selectedExchange, setSelectedExchange] = useState(filters.exchange || '');
     const [selectedType, setSelectedType] = useState(filters.transaction_type || '');
     const [selectedStatus, setSelectedStatus] = useState(filters.status || '');
+    const [dateFrom, setDateFrom] = useState(filters.date_from || '');
+    const [dateTo, setDateTo] = useState(filters.date_to || '');
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncDialogOpen, setSyncDialogOpen] = useState(false);
     const [syncMessage, setSyncMessage] = useState(null);
@@ -40,6 +42,8 @@ export default function TransactionsIndex({
         if (selectedExchange) params.append('exchange', selectedExchange);
         if (selectedType) params.append('transaction_type', selectedType);
         if (selectedStatus) params.append('status', selectedStatus);
+        if (dateFrom) params.append('date_from', dateFrom);
+        if (dateTo) params.append('date_to', dateTo);
         
         window.location.href = `/transactions?${params.toString()}`;
     };
@@ -50,6 +54,8 @@ export default function TransactionsIndex({
         if (exchange) params.append('exchange', exchange);
         if (selectedType) params.append('transaction_type', selectedType);
         if (selectedStatus) params.append('status', selectedStatus);
+        if (dateFrom) params.append('date_from', dateFrom);
+        if (dateTo) params.append('date_to', dateTo);
         
         window.location.href = `/transactions?${params.toString()}`;
     };
@@ -61,11 +67,11 @@ export default function TransactionsIndex({
         if (selectedExchange) params.append('exchange', selectedExchange);
         if (selectedType) params.append('transaction_type', selectedType);
         if (selectedStatus) params.append('status', selectedStatus);
+        if (dateFrom) params.append('date_from', dateFrom);
+        if (dateTo) params.append('date_to', dateTo);
         
-        // También obtener los filtros de la URL si existen (date_from, date_to, asset_type, fiat_type)
+        // También obtener los filtros de la URL si existen (asset_type, fiat_type)
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('date_from')) params.append('date_from', urlParams.get('date_from'));
-        if (urlParams.get('date_to')) params.append('date_to', urlParams.get('date_to'));
         if (urlParams.get('asset_type')) params.append('asset_type', urlParams.get('asset_type'));
         if (urlParams.get('fiat_type')) params.append('fiat_type', urlParams.get('fiat_type'));
         
@@ -212,6 +218,44 @@ export default function TransactionsIndex({
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         }).format(num);
+    };
+
+    const formatDate = (dateString) => {
+        if (!dateString) return '-';
+        
+        // Parsear la fecha como UTC para evitar conversión de zona horaria
+        const date = new Date(dateString);
+        
+        // Si la fecha viene como string ISO con Z, extraer los componentes directamente
+        // para evitar conversión de zona horaria
+        if (typeof dateString === 'string' && dateString.includes('T')) {
+            const isoDate = new Date(dateString);
+            // Usar UTC para formatear sin conversión
+            const year = isoDate.getUTCFullYear();
+            const month = isoDate.getUTCMonth();
+            const day = isoDate.getUTCDate();
+            const hours = isoDate.getUTCHours();
+            const minutes = isoDate.getUTCMinutes();
+            
+            const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 
+                               'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+            
+            const formattedDate = `${day} de ${monthNames[month]} de ${year}`;
+            const period = hours >= 12 ? 'p. m.' : 'a. m.';
+            const displayHours = hours === 0 ? 12 : (hours > 12 ? hours - 12 : hours);
+            
+            return `${formattedDate}, ${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+        }
+        
+        // Fallback al método anterior si no es formato ISO
+        return date.toLocaleDateString('es-CO', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'UTC'
+        });
     };
 
     const getExchangeName = (exchange) => {
@@ -414,6 +458,11 @@ export default function TransactionsIndex({
                                     placeholder="Número de orden..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
+                                    onKeyPress={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleSearch();
+                                        }
+                                    }}
                                 />
                             </div>
                             <div>
@@ -448,19 +497,58 @@ export default function TransactionsIndex({
                             </div>
                         </div>
 
-                        <div className="flex gap-2">
+                        {/* Filtros de Fecha */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Desde</label>
+                                <input
+                                    type="date"
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    value={dateFrom}
+                                    onChange={(e) => setDateFrom(e.target.value)}
+                                    max={dateTo || new Date().toISOString().split('T')[0]}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Hasta</label>
+                                <input
+                                    type="date"
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    value={dateTo}
+                                    onChange={(e) => setDateTo(e.target.value)}
+                                    min={dateFrom || undefined}
+                                    max={new Date().toISOString().split('T')[0]}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 flex-wrap">
                             <button
                                 onClick={handleSearch}
                                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                             >
-                                Buscar
+                                🔍 Buscar
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setSelectedExchange('');
+                                    setSelectedType('');
+                                    setSelectedStatus('');
+                                    setDateFrom('');
+                                    setDateTo('');
+                                    window.location.href = '/transactions';
+                                }}
+                                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                            >
+                                🗑️ Limpiar Filtros
                             </button>
                             <button
                                 onClick={() => setSyncDialogOpen(true)}
                                 disabled={isSyncing}
                                 className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                             >
-                                {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
+                                {isSyncing ? 'Sincronizando...' : '🔄 Sincronizar'}
                             </button>
                             <button
                                 onClick={handleExportExcel}
@@ -734,16 +822,7 @@ export default function TransactionsIndex({
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {transaction.binance_create_time ? 
-                                                        new Date(transaction.binance_create_time).toLocaleDateString('es-CO', {
-                                                            year: 'numeric',
-                                                            month: 'short',
-                                                            day: 'numeric',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit'
-                                                        }) : 
-                                                        '-'
-                                                    }
+                                                    {formatDate(transaction.binance_create_time)}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                                     <div className="flex space-x-2">
@@ -951,16 +1030,7 @@ export default function TransactionsIndex({
                                                 <div className="flex justify-between items-center">
                                                     <span className="text-xs text-gray-600">Fecha:</span>
                                                     <span className="text-xs font-medium text-gray-700">
-                                                        {transaction.binance_create_time ? 
-                                                            new Date(transaction.binance_create_time).toLocaleDateString('es-CO', {
-                                                                year: 'numeric',
-                                                                month: 'short',
-                                                                day: 'numeric',
-                                                                hour: '2-digit',
-                                                                minute: '2-digit'
-                                                            }) : 
-                                                            '-'
-                                                        }
+                                                        {formatDate(transaction.binance_create_time)}
                                                     </span>
                                                 </div>
                                                 {transaction.advertisement_order_number && (

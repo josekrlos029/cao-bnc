@@ -221,6 +221,9 @@ class BinanceTransactionSyncService
         $endTime = $endTime ?? now();
 
         try {
+            // Obtener order_numbers de transacciones pendientes antes de sincronizar
+            $pendingOrderNumbers = $this->getPendingOrderNumbers('p2p_order');
+            
             $orders = $this->getP2POrderHistory($startTime, $endTime);
             
             foreach ($orders as $order) {
@@ -257,6 +260,13 @@ class BinanceTransactionSyncService
                     // Obtener advertisement_order_number para el detalle
                     $adOrderNo = $order['advertisementOrderNumber'] ?? $order['advNo'] ?? null;
 
+                    // Mapear el estado de la orden
+                    $newStatus = $this->mapP2PStatus($order['orderStatus'] ?? 'PENDING');
+                    
+                    // Verificar si esta orden estaba pendiente y ahora tiene un estado diferente
+                    $wasPending = in_array($orderNumber, $pendingOrderNumbers);
+                    $shouldUpdate = $wasPending && $newStatus !== 'pending';
+
                     $transaction = Transaction::updateOrCreate(
                         [
                             'order_number' => $orderNumber,
@@ -277,7 +287,7 @@ class BinanceTransactionSyncService
                             'payment_method' => $paymentMethod,
                             // counter_party se establecerá en enrichP2POrderWithDetail con el nickname correcto del enrich
                             // 'counter_party' => $order['counterPartNickName'] ?? $order['counterpartNickName'] ?? $order['counterPartyNickName'] ?? null,
-                            'status' => $this->mapP2PStatus($order['orderStatus'] ?? 'PENDING'),
+                            'status' => $newStatus,
                             'binance_create_time' => isset($order['createTime']) 
                                 ? Carbon::createFromTimestamp($order['createTime'] / 1000) 
                                 : now(),
@@ -292,29 +302,61 @@ class BinanceTransactionSyncService
                         ]
                     );
                     
-                    // Despachar job para enriquecimiento en background
-                    // El enriquecimiento se hace de forma asíncrona para no bloquear la sincronización
+                    // Si era pendiente y ahora tiene un estado diferente, loguear la actualización
+                    if ($shouldUpdate) {
+                        Log::info('Pending P2P order status updated', [
+                            'transaction_id' => $transaction->id,
+                            'order_number' => $orderNumber,
+                            'old_status' => 'pending',
+                            'new_status' => $newStatus
+                        ]);
+                    }
+                    
+                    // Despachar job para enriquecimiento en background solo si:
+                    // 1. La transacción es nueva (wasRecentlyCreated), O
+                    // 2. La transacción está pendiente y necesita actualización
                     if ($orderNumber && $adOrderNo) {
-                        try {
-                            // Marcar transacción como pending para enriquecimiento
-                            if (Schema::hasColumn('transactions', 'enrichment_status')) {
-                                $transaction->update(['enrichment_status' => 'pending']);
+                        $shouldEnrich = false;
+                        
+                        // Verificar si es nueva o necesita enriquecimiento
+                        if ($transaction->wasRecentlyCreated) {
+                            $shouldEnrich = true;
+                            Log::debug('New transaction detected, will enrich', [
+                                'transaction_id' => $transaction->id,
+                                'order_number' => $orderNumber
+                            ]);
+                        } elseif (in_array($newStatus, ['pending', 'processing']) && empty($transaction->counter_party)) {
+                            // Si está pendiente y no tiene counter_party, necesita enriquecimiento
+                            $shouldEnrich = true;
+                            Log::debug('Pending transaction without counter_party, will enrich', [
+                                'transaction_id' => $transaction->id,
+                                'order_number' => $orderNumber,
+                                'status' => $newStatus
+                            ]);
+                        }
+                        
+                        if ($shouldEnrich) {
+                            try {
+                                // Marcar transacción como pending para enriquecimiento
+                                if (Schema::hasColumn('transactions', 'enrichment_status')) {
+                                    $transaction->update(['enrichment_status' => 'pending']);
+                                }
+                                
+                                EnrichTransaction::dispatch($transaction->id);
+                                Log::debug('EnrichTransaction job dispatched for Binance transaction', [
+                                    'transaction_id' => $transaction->id,
+                                    'order_number' => $orderNumber,
+                                    'ad_order_no' => $adOrderNo
+                                ]);
+                            } catch (\Exception $e) {
+                                Log::warning('Error dispatching EnrichTransaction job', [
+                                    'transaction_id' => $transaction->id,
+                                    'order_number' => $orderNumber,
+                                    'ad_order_no' => $adOrderNo,
+                                    'error' => $e->getMessage()
+                                ]);
+                                // Continuar aunque falle el despacho del job
                             }
-                            
-                            EnrichTransaction::dispatch($transaction->id);
-                            Log::debug('EnrichTransaction job dispatched for Binance transaction', [
-                                'transaction_id' => $transaction->id,
-                                'order_number' => $orderNumber,
-                                'ad_order_no' => $adOrderNo
-                            ]);
-                        } catch (\Exception $e) {
-                            Log::warning('Error dispatching EnrichTransaction job', [
-                                'transaction_id' => $transaction->id,
-                                'order_number' => $orderNumber,
-                                'ad_order_no' => $adOrderNo,
-                                'error' => $e->getMessage()
-                            ]);
-                            // Continuar aunque falle el despacho del job
                         }
                     } else {
                         Log::debug('P2P order missing orderNumber or adOrderNo, skipping enrichment', [
@@ -1526,6 +1568,7 @@ class BinanceTransactionSyncService
             'PROCESSING' => 'processing',
             'COMPLETED' => 'completed',
             'CANCELLED' => 'cancelled',
+            'CANCELLED_BY_SYSTEM' => 'cancelled',
             'FAILED' => 'failed',
             'EXPIRED' => 'expired',
             default => 'pending'
@@ -1598,5 +1641,39 @@ class BinanceTransactionSyncService
             }
         }
         return 'USDT'; // Fallback
+    }
+
+    /**
+     * Obtener los order_numbers de transacciones pendientes para un tipo de transacción
+     */
+    private function getPendingOrderNumbers(string $transactionType): array
+    {
+        if (!$this->userId) {
+            return [];
+        }
+
+        try {
+            // Obtener order_numbers de transacciones pendientes o en procesamiento
+            // Limitamos a las últimas 90 días para evitar consultar demasiadas transacciones antiguas
+            $cutoffDate = now()->subDays(90);
+            
+            $pendingTransactions = Transaction::where('user_id', $this->userId)
+                ->where('exchange', 'binance')
+                ->where('transaction_type', $transactionType)
+                ->whereIn('status', ['pending', 'processing'])
+                ->where('binance_create_time', '>=', $cutoffDate)
+                ->whereNotNull('order_number')
+                ->pluck('order_number')
+                ->toArray();
+
+            return $pendingTransactions;
+        } catch (\Exception $e) {
+            Log::warning('Error getting pending order numbers', [
+                'user_id' => $this->userId,
+                'transaction_type' => $transactionType,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
     }
 }

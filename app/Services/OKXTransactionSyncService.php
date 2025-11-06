@@ -87,6 +87,9 @@ class OKXTransactionSyncService
         $endTime = $endTime ?? now();
 
         try {
+            // Obtener order_numbers de transacciones pendientes antes de sincronizar
+            $pendingOrderNumbers = $this->getPendingOrderNumbers('p2p_order');
+            
             $orders = $this->getP2POrderHistory($startTime, $endTime);
             
             foreach ($orders as $order) {
@@ -114,7 +117,11 @@ class OKXTransactionSyncService
                     }
 
                     // Mapear estado
-                    $status = $this->mapP2PStatus($orderStatus);
+                    $newStatus = $this->mapP2PStatus($orderStatus);
+                    
+                    // Verificar si esta orden estaba pendiente y ahora tiene un estado diferente
+                    $wasPending = in_array((string)$orderId, $pendingOrderNumbers);
+                    $shouldUpdate = $wasPending && $newStatus !== 'pending';
 
                     // Extraer información de cantidades y precios
                     // cryptoAmount: cantidad de crypto (ej: "5000.00")
@@ -187,7 +194,7 @@ class OKXTransactionSyncService
                             'payment_method' => $paymentMethod,
                             'counter_party' => $counterPartyNickName,
                             'counter_party_full_name' => $counterPartyFullName,
-                            'status' => $status,
+                            'status' => $newStatus,
                             'binance_create_time' => $createTime,
                             'binance_update_time' => $updateTime,
                             'source_endpoint' => '/api/v5/p2p/order/list',
@@ -196,26 +203,59 @@ class OKXTransactionSyncService
                         ]
                     );
                     
-                    // Despachar job para enriquecimiento en background
+                    // Si era pendiente y ahora tiene un estado diferente, loguear la actualización
+                    if ($shouldUpdate) {
+                        Log::info('Pending P2P order status updated', [
+                            'transaction_id' => $transaction->id,
+                            'order_number' => $orderId,
+                            'old_status' => 'pending',
+                            'new_status' => $newStatus
+                        ]);
+                    }
+                    
+                    // Despachar job para enriquecimiento en background solo si:
+                    // 1. La transacción es nueva (wasRecentlyCreated), O
+                    // 2. La transacción está pendiente y necesita actualización
                     if ($orderId) {
-                        try {
-                            // Marcar transacción como pending para enriquecimiento
-                            if (Schema::hasColumn('transactions', 'enrichment_status')) {
-                                $transaction->update(['enrichment_status' => 'pending']);
-                            }
-                            
-                            EnrichTransaction::dispatch($transaction->id);
-                            Log::debug('EnrichTransaction job dispatched for OKX transaction', [
+                        $shouldEnrich = false;
+                        
+                        // Verificar si es nueva o necesita enriquecimiento
+                        if ($transaction->wasRecentlyCreated) {
+                            $shouldEnrich = true;
+                            Log::debug('New transaction detected, will enrich', [
                                 'transaction_id' => $transaction->id,
                                 'order_number' => $orderId
                             ]);
-                        } catch (\Exception $e) {
-                            Log::warning('Error dispatching EnrichTransaction job', [
+                        } elseif (in_array($newStatus, ['pending', 'processing']) && empty($transaction->counter_party)) {
+                            // Si está pendiente y no tiene counter_party, necesita enriquecimiento
+                            $shouldEnrich = true;
+                            Log::debug('Pending transaction without counter_party, will enrich', [
                                 'transaction_id' => $transaction->id,
                                 'order_number' => $orderId,
-                                'error' => $e->getMessage()
+                                'status' => $newStatus
                             ]);
-                            // Continuar aunque falle el despacho del job
+                        }
+                        
+                        if ($shouldEnrich) {
+                            try {
+                                // Marcar transacción como pending para enriquecimiento
+                                if (Schema::hasColumn('transactions', 'enrichment_status')) {
+                                    $transaction->update(['enrichment_status' => 'pending']);
+                                }
+                                
+                                EnrichTransaction::dispatch($transaction->id);
+                                Log::debug('EnrichTransaction job dispatched for OKX transaction', [
+                                    'transaction_id' => $transaction->id,
+                                    'order_number' => $orderId
+                                ]);
+                            } catch (\Exception $e) {
+                                Log::warning('Error dispatching EnrichTransaction job', [
+                                    'transaction_id' => $transaction->id,
+                                    'order_number' => $orderId,
+                                    'error' => $e->getMessage()
+                                ]);
+                                // Continuar aunque falle el despacho del job
+                            }
                         }
                     }
                     
@@ -567,6 +607,40 @@ class OKXTransactionSyncService
             'expired', 'expire' => 'expired',
             default => 'pending'
         };
+    }
+
+    /**
+     * Obtener los order_numbers de transacciones pendientes para un tipo de transacción
+     */
+    private function getPendingOrderNumbers(string $transactionType): array
+    {
+        if (!$this->userId) {
+            return [];
+        }
+
+        try {
+            // Obtener order_numbers de transacciones pendientes o en procesamiento
+            // Limitamos a las últimas 90 días para evitar consultar demasiadas transacciones antiguas
+            $cutoffDate = now()->subDays(90);
+            
+            $pendingTransactions = Transaction::where('user_id', $this->userId)
+                ->where('exchange', 'okx')
+                ->where('transaction_type', $transactionType)
+                ->whereIn('status', ['pending', 'processing'])
+                ->where('binance_create_time', '>=', $cutoffDate)
+                ->whereNotNull('order_number')
+                ->pluck('order_number')
+                ->toArray();
+
+            return $pendingTransactions;
+        } catch (\Exception $e) {
+            Log::warning('Error getting pending order numbers', [
+                'user_id' => $this->userId,
+                'transaction_type' => $transactionType,
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
     }
 }
 
