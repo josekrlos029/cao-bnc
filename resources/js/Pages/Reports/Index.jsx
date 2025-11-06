@@ -22,15 +22,39 @@ import {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
-export default function Reports({ dateRange, currency = 'USD', metrics, charts }) {
+export default function Reports({ dateRange, currency = 'USD', metrics, charts, filters = {}, filterOptions = {} }) {
     const [startDate, setStartDate] = useState(dateRange.start_date);
     const [endDate, setEndDate] = useState(dateRange.end_date);
+    const [selectedExchange, setSelectedExchange] = useState(filters.exchange || '');
 
     const handleDateChange = () => {
-        router.get('/reports', {
+        const params = {
             start_date: startDate,
             end_date: endDate,
-        }, {
+        };
+        
+        if (selectedExchange) {
+            params.exchange = selectedExchange;
+        }
+        
+        router.get('/reports', params, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
+    const handleSearchWithExchange = (exchange) => {
+        setSelectedExchange(exchange);
+        const params = {
+            start_date: startDate,
+            end_date: endDate,
+        };
+        
+        if (exchange) {
+            params.exchange = exchange;
+        }
+        
+        router.get('/reports', params, {
             preserveState: true,
             preserveScroll: true,
         });
@@ -79,6 +103,34 @@ export default function Reports({ dateRange, currency = 'USD', metrics, charts }
         return new Intl.NumberFormat('es-ES').format(value);
     };
 
+    const getExchangeName = (exchange) => {
+        if (!exchange) return 'Binance'; // Default para transacciones antiguas
+        return exchange.charAt(0).toUpperCase() + exchange.slice(1);
+    };
+
+    const getExchangeBadgeColor = (exchange) => {
+        const exchangeLower = (exchange || 'binance').toLowerCase();
+        switch (exchangeLower) {
+            case 'binance': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+            case 'bybit': return 'bg-blue-100 text-blue-800 border-blue-300';
+            case 'okx': return 'bg-purple-100 text-purple-800 border-purple-300';
+            default: return 'bg-gray-100 text-gray-800 border-gray-300';
+        }
+    };
+
+    const getExchangeLogo = (exchange) => {
+        const exchangeLower = (exchange || 'binance').toLowerCase();
+        
+        // URLs de logos de exchanges (puedes usar CDN o almacenar localmente)
+        const logos = {
+            'binance': 'https://assets.coingecko.com/coins/images/825/small/binance-coin-logo.png?1547034615',
+            'bybit': 'https://brandlogos.net/wp-content/uploads/2022/09/bybit-logo_brandlogos.net_viubj-512x512.png',
+            'okx': 'https://images.seeklogo.com/logo-png/45/2/okx-logo-png_seeklogo-459094.png',
+        };
+        
+        return logos[exchangeLower] || logos['binance'];
+    };
+
     // Asegurar que los arrays de datos existan
     const safeCharts = {
         volume_by_day: charts.volume_by_day || [],
@@ -99,38 +151,107 @@ export default function Reports({ dateRange, currency = 'USD', metrics, charts }
             <Head title="Reportes" />
             
             <div className="space-y-6">
-                {/* Filtros de fecha */}
+                {/* Filtros de fecha y exchange */}
                 <div className="bg-white shadow rounded-lg p-4">
-                    <div className="flex items-center gap-4">
+                    <div className="space-y-4">
+                        {/* Exchange Filter - Badges clickeables */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Fecha Inicio
-                            </label>
-                            <input
-                                type="date"
-                                value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
-                                className="border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            />
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Exchange</label>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => handleSearchWithExchange('')}
+                                    className={`inline-flex items-center px-4 py-2.5 rounded-lg text-sm font-medium border-2 transition-all duration-200 ${
+                                        selectedExchange === '' 
+                                            ? 'bg-gray-100 text-gray-800 border-gray-400 shadow-md scale-105' 
+                                            : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400 hover:bg-gray-50 hover:shadow-sm'
+                                    }`}
+                                >
+                                    <span className="mr-2 text-base">🌐</span>
+                                    Todos
+                                </button>
+                                {filterOptions.exchanges && filterOptions.exchanges.map(exchange => {
+                                    const isSelected = selectedExchange === exchange;
+                                    const exchangeLower = (exchange || 'binance').toLowerCase();
+                                    
+                                    let selectedClasses = '';
+                                    let unselectedClasses = 'bg-white border-gray-300 hover:shadow-md';
+                                    
+                                    if (exchangeLower === 'binance') {
+                                        selectedClasses = 'bg-yellow-100 text-yellow-800 border-yellow-400';
+                                        unselectedClasses += ' hover:bg-yellow-50 hover:border-yellow-300 hover:text-yellow-700';
+                                    } else if (exchangeLower === 'bybit') {
+                                        selectedClasses = 'bg-blue-100 text-blue-800 border-blue-400';
+                                        unselectedClasses += ' hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700';
+                                    } else if (exchangeLower === 'okx') {
+                                        selectedClasses = 'bg-purple-100 text-purple-800 border-purple-400';
+                                        unselectedClasses += ' hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700';
+                                    } else {
+                                        selectedClasses = 'bg-gray-100 text-gray-800 border-gray-400';
+                                        unselectedClasses += ' hover:bg-gray-50 hover:border-gray-300';
+                                    }
+                                    
+                                    return (
+                                        <button
+                                            key={exchange}
+                                            onClick={() => handleSearchWithExchange(exchange)}
+                                            className={`inline-flex items-center px-4 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all duration-200 ${
+                                                isSelected 
+                                                    ? `${selectedClasses} shadow-md scale-105` 
+                                                    : unselectedClasses
+                                            }`}
+                                        >
+                                            <img 
+                                                src={getExchangeLogo(exchange)} 
+                                                alt={getExchangeName(exchange)}
+                                                className="w-5 h-5 mr-2 rounded-full"
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                }}
+                                            />
+                                            {getExchangeName(exchange)}
+                                            {isSelected && (
+                                                <svg className="w-4 h-4 ml-2" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Fecha Fin
-                            </label>
-                            <input
-                                type="date"
-                                value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
-                                className="border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            />
-                        </div>
-                        <div className="flex items-end">
-                            <button
-                                onClick={handleDateChange}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                Aplicar Filtros
-                            </button>
+
+                        {/* Filtros de fecha */}
+                        <div className="flex items-center gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Fecha Inicio
+                                </label>
+                                <input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Fecha Fin
+                                </label>
+                                <input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    className="border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                />
+                            </div>
+                            <div className="flex items-end">
+                                <button
+                                    onClick={handleDateChange}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    Aplicar Filtros
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

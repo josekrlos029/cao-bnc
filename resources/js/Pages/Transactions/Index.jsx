@@ -18,6 +18,9 @@ export default function TransactionsIndex({
     const [syncMessage, setSyncMessage] = useState(null);
     const [syncMessageType, setSyncMessageType] = useState(null);
     const [viewMode, setViewMode] = useState('table'); // 'table' or 'cards'
+    const [syncMode, setSyncMode] = useState('preset'); // 'preset' or 'custom'
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
 
     // Polling automático cuando hay enriquecimiento activo
     useEffect(() => {
@@ -51,19 +54,48 @@ export default function TransactionsIndex({
         window.location.href = `/transactions?${params.toString()}`;
     };
 
-    const handleSync = async (days = 7) => {
+    const handleExportExcel = () => {
+        // Construir la URL con los filtros actuales
+        const params = new URLSearchParams();
+        if (searchTerm) params.append('search', searchTerm);
+        if (selectedExchange) params.append('exchange', selectedExchange);
+        if (selectedType) params.append('transaction_type', selectedType);
+        if (selectedStatus) params.append('status', selectedStatus);
+        
+        // También obtener los filtros de la URL si existen (date_from, date_to, asset_type, fiat_type)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('date_from')) params.append('date_from', urlParams.get('date_from'));
+        if (urlParams.get('date_to')) params.append('date_to', urlParams.get('date_to'));
+        if (urlParams.get('asset_type')) params.append('asset_type', urlParams.get('asset_type'));
+        if (urlParams.get('fiat_type')) params.append('fiat_type', urlParams.get('fiat_type'));
+        
+        // Abrir la URL en una nueva ventana para descargar el archivo
+        window.open(`/transactions/export/excel?${params.toString()}`, '_blank');
+    };
+
+    const handleSync = async (days = null, startDate = null, endDate = null) => {
         setIsSyncing(true);
         setSyncMessage(null);
         setSyncMessageType(null);
         
         try {
+            const body = {};
+            if (startDate && endDate) {
+                body.start_date = startDate;
+                body.end_date = endDate;
+            } else if (days) {
+                body.days = days;
+            } else {
+                body.days = 7; // Default fallback
+            }
+            
             const response = await fetch('/transactions/sync', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: JSON.stringify({ days: days })
+                body: JSON.stringify(body)
             });
             
             const result = await response.json();
@@ -71,6 +103,9 @@ export default function TransactionsIndex({
                 setSyncMessage(result.message || 'Sincronización iniciada correctamente. Las transacciones aparecerán en unos momentos. Los datos se están enriqueciendo en background.');
                 setSyncMessageType('success');
                 setSyncDialogOpen(false);
+                setSyncMode('preset');
+                setCustomStartDate('');
+                setCustomEndDate('');
                 
                 setTimeout(() => {
                     window.location.reload();
@@ -85,6 +120,22 @@ export default function TransactionsIndex({
         } finally {
             setIsSyncing(false);
         }
+    };
+    
+    const handleCustomSync = () => {
+        if (!customStartDate || !customEndDate) {
+            setSyncMessage('Por favor, selecciona ambas fechas (desde y hasta)');
+            setSyncMessageType('error');
+            return;
+        }
+        
+        if (new Date(customStartDate) > new Date(customEndDate)) {
+            setSyncMessage('La fecha de inicio debe ser anterior a la fecha de fin');
+            setSyncMessageType('error');
+            return;
+        }
+        
+        handleSync(null, customStartDate, customEndDate);
     };
 
     const getStatusBadgeColor = (status) => {
@@ -411,6 +462,15 @@ export default function TransactionsIndex({
                             >
                                 {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
                             </button>
+                            <button
+                                onClick={handleExportExcel}
+                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                            >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Exportar a Excel
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -418,40 +478,114 @@ export default function TransactionsIndex({
                 {/* Sync Dialog */}
                 {syncDialogOpen && (
                     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-                        <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                        <div className="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-md bg-white">
                             <div className="mt-3">
                                 <h3 className="text-lg font-medium text-gray-900 mb-4">Sincronizar Transacciones</h3>
-                                <p className="text-sm text-gray-500 mb-4">Selecciona el período de tiempo para sincronizar:</p>
-                                <div className="grid grid-cols-2 gap-2 mb-4">
-                                    <button
-                                        onClick={() => handleSync(1)}
-                                        disabled={isSyncing}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-                                    >
-                                        Últimos 1 día
-                                    </button>
-                                    <button
-                                        onClick={() => handleSync(7)}
-                                        disabled={isSyncing}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-                                    >
-                                        Últimos 7 días
-                                    </button>
-                                    <button
-                                        onClick={() => handleSync(30)}
-                                        disabled={isSyncing}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-                                    >
-                                        Últimos 30 días
-                                    </button>
-                                    <button
-                                        onClick={() => handleSync(90)}
-                                        disabled={isSyncing}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-                                    >
-                                        Últimos 90 días
-                                    </button>
+                                
+                                {/* Mode Toggle */}
+                                <div className="mb-4">
+                                    <div className="flex items-center justify-center gap-2 mb-3">
+                                        <button
+                                            onClick={() => setSyncMode('preset')}
+                                            disabled={isSyncing}
+                                            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                                syncMode === 'preset'
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            } disabled:opacity-50`}
+                                        >
+                                            Períodos Predefinidos
+                                        </button>
+                                        <button
+                                            onClick={() => setSyncMode('custom')}
+                                            disabled={isSyncing}
+                                            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                                syncMode === 'custom'
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            } disabled:opacity-50`}
+                                        >
+                                            Fechas Personalizadas
+                                        </button>
+                                    </div>
                                 </div>
+                                
+                                {syncMode === 'preset' ? (
+                                    <>
+                                        <p className="text-sm text-gray-500 mb-4">Selecciona el período de tiempo para sincronizar:</p>
+                                        <div className="grid grid-cols-2 gap-2 mb-4">
+                                            <button
+                                                onClick={() => handleSync(1)}
+                                                disabled={isSyncing}
+                                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                            >
+                                                Últimos 1 día
+                                            </button>
+                                            <button
+                                                onClick={() => handleSync(7)}
+                                                disabled={isSyncing}
+                                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                            >
+                                                Últimos 7 días
+                                            </button>
+                                            <button
+                                                onClick={() => handleSync(30)}
+                                                disabled={isSyncing}
+                                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                            >
+                                                Últimos 30 días
+                                            </button>
+                                            <button
+                                                onClick={() => handleSync(90)}
+                                                disabled={isSyncing}
+                                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                                            >
+                                                Últimos 90 días
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-sm text-gray-500 mb-4">Selecciona el rango de fechas para sincronizar:</p>
+                                        <div className="space-y-3 mb-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Fecha Desde
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    value={customStartDate}
+                                                    onChange={(e) => setCustomStartDate(e.target.value)}
+                                                    disabled={isSyncing}
+                                                    max={customEndDate || new Date().toISOString().split('T')[0]}
+                                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                    Fecha Hasta
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    value={customEndDate}
+                                                    onChange={(e) => setCustomEndDate(e.target.value)}
+                                                    disabled={isSyncing}
+                                                    min={customStartDate || undefined}
+                                                    max={new Date().toISOString().split('T')[0]}
+                                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={handleCustomSync}
+                                                disabled={isSyncing || !customStartDate || !customEndDate}
+                                                className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Sincronizar Rango Personalizado
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                                
                                 {isSyncing && (
                                     <div className="flex items-center gap-2 text-blue-600 mb-4">
                                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
@@ -463,6 +597,9 @@ export default function TransactionsIndex({
                                         onClick={() => {
                                             setSyncDialogOpen(false);
                                             setSyncMessage(null);
+                                            setSyncMode('preset');
+                                            setCustomStartDate('');
+                                            setCustomEndDate('');
                                         }}
                                         disabled={isSyncing}
                                         className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"

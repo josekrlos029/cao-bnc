@@ -184,6 +184,7 @@ class ExchangeCredentialsController extends Controller
         $request->validate([
             'api_key' => 'required|string',
             'secret_key' => 'required|string',
+            'passphrase' => 'required|string',
             'testnet' => 'boolean',
         ]);
 
@@ -193,6 +194,7 @@ class ExchangeCredentialsController extends Controller
             // Asignar valores usando los mutators
             $credentials->api_key = $request->api_key;
             $credentials->secret_key = $request->secret_key;
+            $credentials->passphrase = $request->passphrase;
             $credentials->is_testnet = $request->boolean('testnet', false);
             $credentials->is_active = true;
             $credentials->save();
@@ -243,11 +245,18 @@ class ExchangeCredentialsController extends Controller
      */
     public function testConnection(Request $request, string $exchange)
     {
-        $request->validate([
+        $validationRules = [
             'api_key' => 'required|string',
             'secret_key' => 'required|string',
             'testnet' => 'boolean',
-        ]);
+        ];
+        
+        // OKX requiere passphrase
+        if (strtolower($exchange) === 'okx') {
+            $validationRules['passphrase'] = 'required|string';
+        }
+        
+        $request->validate($validationRules);
 
         try {
             $isConnected = false;
@@ -256,6 +265,11 @@ class ExchangeCredentialsController extends Controller
                 'secret_key' => $request->secret_key,
                 'is_testnet' => $request->boolean('testnet', false),
             ];
+            
+            // Agregar passphrase si es OKX
+            if (strtolower($exchange) === 'okx') {
+                $directCredentials['passphrase'] = $request->passphrase;
+            }
 
             switch (strtolower($exchange)) {
                 case 'binance':

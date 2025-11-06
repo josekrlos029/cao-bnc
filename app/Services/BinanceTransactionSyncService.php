@@ -1446,7 +1446,7 @@ class BinanceTransactionSyncService
 
         return Http::withHeaders([
             'X-MBX-APIKEY' => $this->apiKey,
-        ])->timeout(30)->get($url);
+        ])->timeout(90)->get($url);
     }
 
     /**
@@ -1478,7 +1478,7 @@ class BinanceTransactionSyncService
         return Http::withHeaders([
             'X-MBX-APIKEY' => $this->apiKey,
             'Content-Type' => 'application/json',
-        ])->timeout(30)->post($url, $bodyParams);
+        ])->timeout(90)->post($url, $bodyParams);
     }
 
     private function makeAuthenticatedRequest(string $method, string $endpoint, array $params = []): \Illuminate\Http\Client\Response
@@ -1515,7 +1515,7 @@ class BinanceTransactionSyncService
 
         return Http::withHeaders([
             'X-MBX-APIKEY' => $this->apiKey,
-        ])->timeout(30)->$method($url);
+        ])->timeout(90)->$method($url);
     }
 
     // Métodos de mapeo de estados

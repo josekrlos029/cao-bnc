@@ -27,6 +27,11 @@ class ReportsController extends Controller
         $baseQuery = Transaction::where('user_id', $userId)
             ->whereBetween('binance_create_time', [$start, $end]);
 
+        // Filtro por exchange
+        if ($request->filled('exchange')) {
+            $baseQuery->where('exchange', $request->exchange);
+        }
+
         // 1. Volumen total
         $totalVolume = (clone $baseQuery)
             ->completed()
@@ -288,11 +293,18 @@ class ReportsController extends Controller
             ->sortByDesc('margin_percentage')
             ->values();
 
+        // Opciones para filtros (solo del usuario)
+        $filterOptions = [
+            'exchanges' => Transaction::where('user_id', $userId)->distinct()->pluck('exchange')->filter()->values(),
+        ];
+
         return Inertia::render('Reports/Index', [
             'dateRange' => [
                 'start_date' => $startDate,
                 'end_date' => $endDate,
             ],
+            'filters' => $request->only(['exchange']),
+            'filterOptions' => $filterOptions,
             'metrics' => [
                 'total_volume' => (float) $totalVolume,
                 'avg_price' => (float) $avgPrice,

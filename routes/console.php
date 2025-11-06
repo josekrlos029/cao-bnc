@@ -30,3 +30,9 @@ Schedule::command('binance:sync-transactions --days=7')
     ->weeklyOn(1, '02:00') // Lunes a las 2 AM
     ->withoutOverlapping()
     ->runInBackground();
+
+// Sincronización en tiempo real cada 5 minutos
+Schedule::command('transactions:sync-recent --minutes=10')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->runInBackground();

@@ -18,4 +18,9 @@ yarn-error.log
 /.vscode
 
 # Binance P2P logs
-/storage/logs/binance_p2p/
+/storage/logs
+
+/Archivo.zip
+
+#cache
+

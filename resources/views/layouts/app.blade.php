@@ -23,7 +23,7 @@
                     <div class="flex items-center">
                         <div class="flex-shrink-0">
                             <a href="{{ url('/') }}" class="text-xl font-bold text-gray-900">
-                                Cao BNC Bot
+                                Palladium BNC Bot
                             </a>
                         </div>
                         <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">

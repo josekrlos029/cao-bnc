@@ -77,6 +77,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/sync', [TransactionController::class, 'sync'])->name('transactions.sync');
     Route::get('/transactions/stats', [TransactionController::class, 'stats'])->name('transactions.stats');
     Route::post('/transactions/export', [TransactionController::class, 'export'])->name('transactions.export');
+    Route::get('/transactions/export/excel', [TransactionController::class, 'exportExcel'])->name('transactions.export.excel');
     
     // Reports Routes
     Route::get('/reports', [ReportsController::class, 'index'])->name('reports.index');

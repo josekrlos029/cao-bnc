@@ -6,6 +6,8 @@ use App\Models\Transaction;
 use App\Models\CounterParty;
 use App\Jobs\SyncBinanceTransactions;
 use App\Jobs\SyncBybitTransactions;
+use App\Jobs\SyncOKXTransactions;
+use App\Exports\TransactionsExport;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Carbon\Carbon;
@@ -13,6 +15,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class TransactionController extends Controller
 {
@@ -442,7 +446,11 @@ class TransactionController extends Controller
                 ->where('is_active', true)
                 ->exists();
 
-            if (!$hasBinanceCredentials && !$hasBybitCredentials) {
+            $hasOKXCredentials = \App\Models\OKXCredential::where('user_id', $userId)
+                ->where('is_active', true)
+                ->exists();
+
+            if (!$hasBinanceCredentials && !$hasBybitCredentials && !$hasOKXCredentials) {
                 return response()->json([
                     'success' => false,
                     'message' => 'No tienes credenciales de ningún exchange configuradas. Por favor, configura tus credenciales primero.'
@@ -463,6 +471,11 @@ class TransactionController extends Controller
                     if ($hasBybitCredentials) {
                         SyncBybitTransactions::dispatchSync($startTime, $endTime, $userId);
                         $syncedExchanges[] = 'Bybit';
+                    }
+                    
+                    if ($hasOKXCredentials) {
+                        SyncOKXTransactions::dispatchSync($startTime, $endTime, $userId);
+                        $syncedExchanges[] = 'OKX';
                     }
                     
                     return response()->json([
@@ -491,6 +504,11 @@ class TransactionController extends Controller
                 if ($hasBybitCredentials) {
                     SyncBybitTransactions::dispatch($startTime, $endTime, $userId);
                     $syncedExchanges[] = 'Bybit';
+                }
+
+                if ($hasOKXCredentials) {
+                    SyncOKXTransactions::dispatch($startTime, $endTime, $userId);
+                    $syncedExchanges[] = 'OKX';
                 }
 
                 return response()->json([
@@ -622,6 +640,71 @@ class TransactionController extends Controller
                 'success' => false,
                 'message' => 'Error exporting transactions: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Exportar transacciones a Excel
+     * Aplica los mismos filtros que el método index
+     */
+    public function exportExcel(Request $request): BinaryFileResponse
+    {
+        try {
+            $userId = auth()->id();
+            
+            // Query base filtrado por usuario autenticado (mismo que en index)
+            $query = Transaction::where('user_id', $userId);
+
+            // Aplicar los mismos filtros que el método index
+            if ($request->filled('exchange')) {
+                $query->where('exchange', $request->exchange);
+            }
+
+            if ($request->filled('transaction_type')) {
+                $query->where('transaction_type', $request->transaction_type);
+            }
+
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->filled('asset_type')) {
+                $query->where('asset_type', $request->asset_type);
+            }
+
+            if ($request->filled('fiat_type')) {
+                $query->where('fiat_type', $request->fiat_type);
+            }
+
+            if ($request->filled('date_from')) {
+                $query->whereDate('binance_create_time', '>=', $request->date_from);
+            }
+
+            if ($request->filled('date_to')) {
+                $query->whereDate('binance_create_time', '<=', $request->date_to);
+            }
+
+            if ($request->filled('is_manual')) {
+                $query->where('is_manual_entry', $request->boolean('is_manual'));
+            }
+
+            // Búsqueda por número de orden
+            if ($request->filled('search')) {
+                $query->where('order_number', 'like', '%' . $request->search . '%');
+            }
+
+            // Ordenamiento: siempre por fecha de la orden descendente (más recientes primero)
+            $query->orderBy('binance_create_time', 'desc');
+
+            // Obtener todas las transacciones (sin paginación)
+            $transactions = $query->get();
+
+            $fileName = 'transacciones_' . now()->format('Y-m-d_H-i-s') . '.xlsx';
+
+            return Excel::download(new TransactionsExport($transactions), $fileName);
+
+        } catch (\Exception $e) {
+            abort(500, 'Error al exportar transacciones: ' . $e->getMessage());
         }
     }
 

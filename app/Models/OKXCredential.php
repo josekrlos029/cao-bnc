@@ -17,6 +17,7 @@ class OKXCredential extends Model
         'user_id',
         'api_key_encrypted',
         'secret_key_encrypted',
+        'passphrase_encrypted',
         'is_testnet',
         'is_active',
         'last_used_at',
@@ -32,6 +33,7 @@ class OKXCredential extends Model
     protected $hidden = [
         'api_key_encrypted',
         'secret_key_encrypted',
+        'passphrase_encrypted',
     ];
 
     public function user(): BelongsTo
@@ -57,6 +59,16 @@ class OKXCredential extends Model
     public function setSecretKeyAttribute($value): void
     {
         $this->secret_key_encrypted = Crypt::encryptString($value);
+    }
+
+    public function getPassphraseAttribute(): string
+    {
+        return Crypt::decryptString($this->passphrase_encrypted);
+    }
+
+    public function setPassphraseAttribute($value): void
+    {
+        $this->passphrase_encrypted = Crypt::encryptString($value);
     }
 
     public function scopeActive($query)

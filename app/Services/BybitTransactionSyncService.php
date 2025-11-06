@@ -465,7 +465,7 @@ class BybitTransactionSyncService
                 $url .= '?' . $queryString;
             }
             
-            $response = Http::withHeaders($headers)->timeout(30)->get($url);
+            $response = Http::withHeaders($headers)->timeout(90)->get($url);
             
         } else {
             // Para POST/PUT/DELETE: timestamp + api_key + recv_window + raw_json_body
@@ -494,7 +494,7 @@ class BybitTransactionSyncService
                 'headers' => array_merge($headers, ['X-BAPI-SIGN' => '[HIDDEN]']),
             ]);
             
-            $http = Http::withHeaders($headers)->withBody($jsonBody, 'application/json')->timeout(30);
+            $http = Http::withHeaders($headers)->withBody($jsonBody, 'application/json')->timeout(90);
             
             $response = match($method) {
                 'POST' => $http->post($url),

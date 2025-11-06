@@ -20,6 +20,7 @@ export default function Exchanges({ binance, bybit, okx }) {
         okx: {
             api_key: '',
             secret_key: '',
+            passphrase: '',
             testnet: okx?.is_testnet || false,
         },
     });
@@ -156,6 +157,7 @@ export default function Exchanges({ binance, bybit, okx }) {
                     [exchange]: {
                         api_key: '',
                         secret_key: '',
+                        passphrase: exchange === 'okx' ? '' : undefined,
                         testnet: false,
                     },
                 }));
@@ -251,6 +253,25 @@ export default function Exchanges({ binance, bybit, okx }) {
                         />
                     </div>
 
+                    {exchange === 'okx' && (
+                        <div>
+                            <label htmlFor={`${exchange}_passphrase`} className="block text-sm font-medium text-gray-700">
+                                Passphrase
+                            </label>
+                            <input
+                                type="password"
+                                id={`${exchange}_passphrase`}
+                                value={formData[exchange].passphrase}
+                                onChange={(e) => handleInputChange(exchange, 'passphrase', e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                placeholder="Ingresa tu Passphrase"
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                                La frase de contraseña que configuraste al crear la clave API en OKX
+                            </p>
+                        </div>
+                    )}
+
                     <div className="flex items-center">
                         <input
                             type="checkbox"
@@ -268,7 +289,12 @@ export default function Exchanges({ binance, bybit, okx }) {
                         <button
                             type="button"
                             onClick={() => handleTestConnection(exchange)}
-                            disabled={!formData[exchange].api_key || !formData[exchange].secret_key || loading[exchange]}
+                            disabled={
+                                !formData[exchange].api_key || 
+                                !formData[exchange].secret_key || 
+                                (exchange === 'okx' && !formData[exchange].passphrase) ||
+                                loading[exchange]
+                            }
                             className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading[exchange] ? 'Probando...' : 'Probar Conexión'}
@@ -277,7 +303,12 @@ export default function Exchanges({ binance, bybit, okx }) {
                         <button
                             type="button"
                             onClick={() => handleSave(exchange)}
-                            disabled={!formData[exchange].api_key || !formData[exchange].secret_key || loading[`${exchange}_save`]}
+                            disabled={
+                                !formData[exchange].api_key || 
+                                !formData[exchange].secret_key || 
+                                (exchange === 'okx' && !formData[exchange].passphrase) ||
+                                loading[`${exchange}_save`]
+                            }
                             className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading[`${exchange}_save`] ? 'Guardando...' : 'Guardar'}

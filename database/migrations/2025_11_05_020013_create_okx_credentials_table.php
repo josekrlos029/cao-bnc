@@ -18,6 +18,7 @@ return new class extends Migration
             // Credenciales encriptadas
             $table->text('api_key_encrypted');
             $table->text('secret_key_encrypted');
+            $table->text('passphrase_encrypted');
             
             // Configuración
             $table->boolean('is_testnet')->default(false);
