@@ -190,12 +190,12 @@ export default function Exchanges({ binance, bybit, okx }) {
         const isActive = data?.is_active || false;
 
         return (
-            <div className="bg-white shadow rounded-lg p-6">
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-medium text-gray-900">{label}</h3>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">{label}</h3>
                     {hasCredentials && (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            isActive ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
                         }`}>
                             {isActive ? 'Activo' : 'Inactivo'}
                         </span>
@@ -203,14 +203,25 @@ export default function Exchanges({ binance, bybit, okx }) {
                 </div>
 
                 {hasCredentials && (
-                    <div className="mb-4 p-3 bg-gray-50 rounded-md">
-                        <div className="text-sm text-gray-600">
+                    <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                        <div className="text-sm text-gray-600 dark:text-gray-300">
                             <p><strong>Testnet:</strong> {data.is_testnet ? 'Sí' : 'No'}</p>
                             {data.last_used_at && (
-                                <p><strong>Último uso:</strong> {new Date(data.last_used_at).toLocaleString()}</p>
+                                <p><strong>Último uso:</strong> {(() => {
+                                    const date = new Date(data.last_used_at);
+                                    const offsetDate = new Date(date.getTime() - 5 * 60 * 60 * 1000);
+                                    return offsetDate.toLocaleString('es-CO', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        timeZone: 'UTC'
+                                    });
+                                })()}</p>
                             )}
                             {data.last_error && (
-                                <p className="text-red-600"><strong>Último error:</strong> {data.last_error}</p>
+                                <p className="text-red-600 dark:text-red-400"><strong>Último error:</strong> {data.last_error}</p>
                             )}
                         </div>
                     </div>
@@ -218,7 +229,7 @@ export default function Exchanges({ binance, bybit, okx }) {
 
                 {messages[exchange] && (
                     <div className={`mb-4 p-3 rounded-md ${
-                        messages[exchange].type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+                        messages[exchange].type === 'success' ? 'bg-green-50 dark:bg-green-900 text-green-800 dark:text-green-200' : 'bg-red-50 dark:bg-red-900 text-red-800 dark:text-red-200'
                     }`}>
                         {messages[exchange].text}
                     </div>
@@ -226,7 +237,7 @@ export default function Exchanges({ binance, bybit, okx }) {
 
                 <div className="space-y-4">
                     <div>
-                        <label htmlFor={`${exchange}_api_key`} className="block text-sm font-medium text-gray-700">
+                        <label htmlFor={`${exchange}_api_key`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                             API Key
                         </label>
                         <input
@@ -234,13 +245,13 @@ export default function Exchanges({ binance, bybit, okx }) {
                             id={`${exchange}_api_key`}
                             value={formData[exchange].api_key}
                             onChange={(e) => handleInputChange(exchange, 'api_key', e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                            className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 sm:text-sm"
                             placeholder="Ingresa tu API Key"
                         />
                     </div>
 
                     <div>
-                        <label htmlFor={`${exchange}_secret_key`} className="block text-sm font-medium text-gray-700">
+                        <label htmlFor={`${exchange}_secret_key`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                             Secret Key
                         </label>
                         <input
@@ -248,14 +259,14 @@ export default function Exchanges({ binance, bybit, okx }) {
                             id={`${exchange}_secret_key`}
                             value={formData[exchange].secret_key}
                             onChange={(e) => handleInputChange(exchange, 'secret_key', e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                            className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 sm:text-sm"
                             placeholder="Ingresa tu Secret Key"
                         />
                     </div>
 
                     {exchange === 'okx' && (
                         <div>
-                            <label htmlFor={`${exchange}_passphrase`} className="block text-sm font-medium text-gray-700">
+                            <label htmlFor={`${exchange}_passphrase`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                 Passphrase
                             </label>
                             <input
@@ -263,10 +274,10 @@ export default function Exchanges({ binance, bybit, okx }) {
                                 id={`${exchange}_passphrase`}
                                 value={formData[exchange].passphrase}
                                 onChange={(e) => handleInputChange(exchange, 'passphrase', e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400 sm:text-sm"
                                 placeholder="Ingresa tu Passphrase"
                             />
-                            <p className="mt-1 text-xs text-gray-500">
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                 La frase de contraseña que configuraste al crear la clave API en OKX
                             </p>
                         </div>
@@ -278,9 +289,9 @@ export default function Exchanges({ binance, bybit, okx }) {
                             id={`${exchange}_testnet`}
                             checked={formData[exchange].testnet}
                             onChange={(e) => handleInputChange(exchange, 'testnet', e.target.checked)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700"
                         />
-                        <label htmlFor={`${exchange}_testnet`} className="ml-2 block text-sm text-gray-900">
+                        <label htmlFor={`${exchange}_testnet`} className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                             Usar Testnet (entorno de pruebas)
                         </label>
                     </div>
@@ -336,41 +347,41 @@ export default function Exchanges({ binance, bybit, okx }) {
 
             <div className="space-y-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Credenciales de Exchanges</h2>
-                    <p className="mt-1 text-sm text-gray-500">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Credenciales de Exchanges</h2>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                         Configura tus credenciales API para acceder a los datos de Binance, Bybit y OKX.
                     </p>
                 </div>
 
                 {/* Tab Navigation */}
-                <div className="border-b border-gray-200">
+                <div className="border-b border-gray-200 dark:border-gray-700">
                     <nav className="-mb-px flex space-x-8">
                         <button
                             onClick={() => setActiveTab('binance')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                                 activeTab === 'binance'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
                             }`}
                         >
                             Binance
                         </button>
                         <button
                             onClick={() => setActiveTab('bybit')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                                 activeTab === 'bybit'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
                             }`}
                         >
                             Bybit
                         </button>
                         <button
                             onClick={() => setActiveTab('okx')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                                 activeTab === 'okx'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
                             }`}
                         >
                             OKX

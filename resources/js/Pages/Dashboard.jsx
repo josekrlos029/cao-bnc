@@ -68,12 +68,32 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
         // Parsear la fecha como UTC para evitar conversión de zona horaria
         if (typeof dateString === 'string' && dateString.includes('T')) {
             const isoDate = new Date(dateString);
-            // Usar UTC para formatear sin conversión
-            const year = isoDate.getUTCFullYear();
-            const month = isoDate.getUTCMonth();
-            const day = isoDate.getUTCDate();
-            const hours = isoDate.getUTCHours();
-            const minutes = isoDate.getUTCMinutes();
+            // Obtener componentes UTC
+            let year = isoDate.getUTCFullYear();
+            let month = isoDate.getUTCMonth();
+            let day = isoDate.getUTCDate();
+            let hours = isoDate.getUTCHours();
+            let minutes = isoDate.getUTCMinutes();
+            
+            // Restar 5 horas (UTC-5)
+            hours -= 5;
+            
+            // Ajustar si las horas son negativas (cambiar al día anterior)
+            if (hours < 0) {
+                hours += 24;
+                day -= 1;
+                // Ajustar mes y año si es necesario
+                if (day < 1) {
+                    month -= 1;
+                    if (month < 0) {
+                        month = 11;
+                        year -= 1;
+                    }
+                    // Obtener días del mes anterior
+                    const daysInPreviousMonth = new Date(year, month + 1, 0).getDate();
+                    day = daysInPreviousMonth;
+                }
+            }
             
             const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 
                                'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -86,7 +106,10 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
         }
         
         // Fallback
-        return new Date(dateString).toLocaleDateString('es-ES', {
+        const date = new Date(dateString);
+        // Crear una nueva fecha con offset de -5 horas
+        const offsetDate = new Date(date.getTime() - 5 * 60 * 60 * 1000);
+        return offsetDate.toLocaleDateString('es-ES', {
             day: '2-digit',
             month: 'short',
             hour: '2-digit',
@@ -97,17 +120,17 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
 
     const getStatusColor = (status) => {
         const colors = {
-            'completed': 'bg-green-100 text-green-800',
-            'pending': 'bg-yellow-100 text-yellow-800',
-            'processing': 'bg-blue-100 text-blue-800',
-            'cancelled': 'bg-gray-100 text-gray-800',
-            'failed': 'bg-red-100 text-red-800',
+            'completed': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+            'pending': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+            'processing': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+            'cancelled': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200',
+            'failed': 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
         };
-        return colors[status] || 'bg-gray-100 text-gray-800';
+        return colors[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
     };
 
     const getOrderTypeColor = (type) => {
-        return type === 'BUY' ? 'text-green-600' : 'text-red-600';
+        return type === 'BUY' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
     };
 
     const statCards = [
@@ -159,24 +182,24 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
             
             <div className="space-y-6">
                 {/* Tab Navigation */}
-                <div className="border-b border-gray-200">
+                <div className="border-b border-gray-200 dark:border-gray-700">
                     <nav className="-mb-px flex space-x-8">
                         <button
                             onClick={() => setActiveTab('overview')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                                 activeTab === 'overview'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
                             }`}
                         >
                             Resumen
                         </button>
                         <button
                             onClick={() => setActiveTab('bot-config')}
-                            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                                 activeTab === 'bot-config'
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                    ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:border-gray-600'
                             }`}
                         >
                             Configuración del Bot
@@ -190,29 +213,29 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                 {/* Stats Grid */}
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                     {statCards.map((card) => (
-                        <div key={card.name} className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow">
+                        <div key={card.name} className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-700">
                             <div className="p-5">
                                 <div className="flex items-center justify-between">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-3 mb-2">
                                             <span className="text-2xl">{card.icon}</span>
-                                            <dt className="text-sm font-medium text-gray-500 truncate">
+                                            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
                                                 {card.name}
                                             </dt>
                                         </div>
-                                        <dd className="text-2xl font-bold text-gray-900 mb-1">
+                                        <dd className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
                                             {card.value}
                                         </dd>
                                         {card.subtitle && (
-                                            <dd className="text-xs text-gray-500 mb-2">
+                                            <dd className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                                                 {card.subtitle}
                                             </dd>
                                         )}
                                         {card.change && (
                                             <dd className={`text-xs font-medium ${
-                                                card.changeType === 'positive' ? 'text-green-600' : 
-                                                card.changeType === 'negative' ? 'text-red-600' : 
-                                                'text-blue-600'
+                                                card.changeType === 'positive' ? 'text-green-600 dark:text-green-400' : 
+                                                card.changeType === 'negative' ? 'text-red-600 dark:text-red-400' : 
+                                                'text-blue-600 dark:text-blue-400'
                                             }`}>
                                                 {card.change}
                                             </dd>
@@ -227,8 +250,8 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                 {/* Gráficos principales */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Gráfico: Transacciones por día */}
-                    <div className="bg-white shadow rounded-lg p-6">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
                             Actividad de los Últimos 7 Días
                         </h3>
                         <ResponsiveContainer width="100%" height={250}>
@@ -255,8 +278,8 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                     </div>
 
                     {/* Gráfico: Compras vs Ventas */}
-                    <div className="bg-white shadow rounded-lg p-6">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
                             Distribución por Tipo de Operación
                         </h3>
                         <ResponsiveContainer width="100%" height={250}>
@@ -285,8 +308,8 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                                         {item.type}:
                                     </span>
                                     <div className="flex items-center gap-4">
-                                        <span className="text-gray-600">{formatNumber(item.count)} ops</span>
-                                        <span className="text-gray-500">{formatCurrency(item.volume)}</span>
+                                        <span className="text-gray-600 dark:text-gray-300">{formatNumber(item.count)} ops</span>
+                                        <span className="text-gray-500 dark:text-gray-400">{formatCurrency(item.volume)}</span>
                                     </div>
                                 </div>
                             ))}
@@ -297,30 +320,30 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                 {/* Top Activos y Estado */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Top 5 Activos */}
-                    <div className="bg-white shadow rounded-lg p-6">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
                             Top 5 Activos por Volumen
                         </h3>
                         <div className="space-y-3">
                             {(charts.top_assets || []).map((asset, index) => (
-                                <div key={asset.asset} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <div key={asset.asset} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center font-bold text-blue-600">
+                                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center font-bold text-blue-600 dark:text-blue-300">
                                             {index + 1}
                                         </div>
                                         <div>
-                                            <div className="font-medium text-gray-900">{asset.asset}</div>
-                                            <div className="text-xs text-gray-500">{formatNumber(asset.count)} operaciones</div>
+                                            <div className="font-medium text-gray-900 dark:text-white">{asset.asset}</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">{formatNumber(asset.count)} operaciones</div>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <div className="font-semibold text-gray-900">{formatCurrency(asset.volume)}</div>
-                                        <div className="text-xs text-gray-500">{currency}</div>
+                                        <div className="font-semibold text-gray-900 dark:text-white">{formatCurrency(asset.volume)}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">{currency}</div>
                                     </div>
                                 </div>
                             ))}
                             {(!charts.top_assets || charts.top_assets.length === 0) && (
-                                <div className="text-center text-gray-500 py-8">
+                                <div className="text-center text-gray-500 dark:text-gray-400 py-8">
                                     No hay datos de activos disponibles
                                 </div>
                             )}
@@ -328,8 +351,8 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                     </div>
 
                     {/* Operaciones por Estado */}
-                    <div className="bg-white shadow rounded-lg p-6">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
                             Estado de Transacciones
                         </h3>
                         <ResponsiveContainer width="100%" height={200}>
@@ -357,7 +380,7 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                                     <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(item.status)}`}>
                                         {item.status}
                                     </span>
-                                    <span className="text-gray-600 font-medium">{formatNumber(item.count)}</span>
+                                    <span className="text-gray-600 dark:text-gray-300 font-medium">{formatNumber(item.count)}</span>
                                 </div>
                             ))}
                         </div>
@@ -365,15 +388,15 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                 </div>
 
                 {/* Transacciones Recientes */}
-                <div className="bg-white shadow rounded-lg">
-                    <div className="px-4 py-5 sm:p-6 border-b border-gray-200">
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700">
+                    <div className="px-4 py-5 sm:p-6 border-b border-gray-200 dark:border-gray-700">
                         <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-medium text-gray-900">
+                            <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                                 Transacciones Recientes
                             </h3>
                             <Link 
                                 href="/transactions"
-                                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium transition-colors"
                             >
                                 Ver todas →
                             </Link>
@@ -381,48 +404,48 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                     </div>
                     <div className="overflow-hidden">
                         {recent_transactions && recent_transactions.length > 0 ? (
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
+                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <thead className="bg-gray-50 dark:bg-gray-700">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                             Orden
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                             Tipo
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                             Activo
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                             Operación
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                             Monto
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                             Estado
                                         </th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                                             Fecha
                                         </th>
                                     </tr>
                                 </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
+                                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                     {recent_transactions.map((transaction) => (
-                                        <tr key={transaction.id} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                                        <tr key={transaction.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900 dark:text-white">
                                                 {transaction.order_number.substring(0, 8)}...
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                 {transaction.transaction_type}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                                                 {transaction.asset_type}
                                             </td>
                                             <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getOrderTypeColor(transaction.order_type)}`}>
                                                 {transaction.order_type || '-'}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                                                 {formatCurrency(transaction.total_price || 0)}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -430,7 +453,7 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                                                     {transaction.status}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                 {formatDate(transaction.binance_create_time)}
                                             </td>
                                         </tr>
@@ -438,11 +461,11 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                                 </tbody>
                             </table>
                         ) : (
-                            <div className="px-6 py-12 text-center text-gray-500">
+                            <div className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                                 <p>No hay transacciones recientes</p>
                                 <Link 
                                     href="/transactions"
-                                    className="mt-4 inline-block text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                    className="mt-4 inline-block text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium transition-colors"
                                 >
                                     Ver todas las transacciones →
                                 </Link>
@@ -452,26 +475,26 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
                 </div>
 
                 {/* Quick Actions */}
-                <div className="bg-white shadow rounded-lg">
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg border border-gray-200 dark:border-gray-700">
                     <div className="px-4 py-5 sm:p-6">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+                        <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">
                             Acciones Rápidas
                         </h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                             <Link 
                                 href="/transactions"
-                                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all"
+                                className="relative group bg-white dark:bg-gray-700 p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 dark:focus-within:ring-blue-400 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all"
                             >
                                 <div>
-                                    <span className="rounded-lg inline-flex p-3 bg-blue-50 text-blue-700 ring-4 ring-white">
+                                    <span className="rounded-lg inline-flex p-3 bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-300 ring-4 ring-white dark:ring-gray-700">
                                         📊
                                     </span>
                                 </div>
                                 <div className="mt-4">
-                                    <h3 className="text-lg font-medium text-gray-900">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                                         Ver Transacciones
                                     </h3>
-                                    <p className="mt-2 text-sm text-gray-500">
+                                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                                         Revisa tu actividad comercial reciente
                                     </p>
                                 </div>
@@ -479,18 +502,18 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
 
                             <Link 
                                 href="/reports"
-                                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-green-300 hover:shadow-md transition-all"
+                                className="relative group bg-white dark:bg-gray-700 p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 dark:focus-within:ring-blue-400 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-green-300 dark:hover:border-green-500 hover:shadow-md transition-all"
                             >
                                 <div>
-                                    <span className="rounded-lg inline-flex p-3 bg-green-50 text-green-700 ring-4 ring-white">
+                                    <span className="rounded-lg inline-flex p-3 bg-green-50 dark:bg-green-900 text-green-700 dark:text-green-300 ring-4 ring-white dark:ring-gray-700">
                                         📈
                                     </span>
                                 </div>
                                 <div className="mt-4">
-                                    <h3 className="text-lg font-medium text-gray-900">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                                         Ver Reportes
                                     </h3>
-                                    <p className="mt-2 text-sm text-gray-500">
+                                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                                         Analiza tu rendimiento con gráficos detallados
                                     </p>
                                 </div>
@@ -498,18 +521,18 @@ export default function Dashboard({ stats, currency = 'USD', charts, recent_tran
 
                             <Link 
                                 href="/settings/exchanges"
-                                className="relative group bg-white p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 rounded-lg border border-gray-200 hover:border-purple-300 hover:shadow-md transition-all"
+                                className="relative group bg-white dark:bg-gray-700 p-6 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-500 dark:focus-within:ring-blue-400 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500 hover:shadow-md transition-all"
                             >
                                 <div>
-                                    <span className="rounded-lg inline-flex p-3 bg-purple-50 text-purple-700 ring-4 ring-white">
+                                    <span className="rounded-lg inline-flex p-3 bg-purple-50 dark:bg-purple-900 text-purple-700 dark:text-purple-300 ring-4 ring-white dark:ring-gray-700">
                                         ⚙️
                                     </span>
                                 </div>
                                 <div className="mt-4">
-                                    <h3 className="text-lg font-medium text-gray-900">
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                                         Configuración
                                     </h3>
-                                    <p className="mt-2 text-sm text-gray-500">
+                                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                                         Configura tus claves API y preferencias
                                     </p>
                                 </div>

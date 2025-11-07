@@ -235,7 +235,7 @@
                                             </span>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {{ $transaction->binance_create_time ? $transaction->binance_create_time->format('Y-m-d H:i') : '-' }}
+                                            {{ $transaction->binance_create_time ? $transaction->binance_create_time->copy()->subHours(5)->format('Y-m-d H:i') : '-' }}
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2">

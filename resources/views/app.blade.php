@@ -18,6 +18,18 @@
         @inertiaHead
     </head>
     <body class="font-sans antialiased">
+        <script>
+            // Initialize theme before React mounts to prevent flash
+            (function() {
+                const theme = localStorage.getItem('theme') || 
+                    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            })();
+        </script>
         @inertia
     </body>
 </html>

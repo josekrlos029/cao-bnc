@@ -85,11 +85,11 @@
                 </div>
                 <div>
                     <dt class="font-medium text-gray-700">Creado:</dt>
-                    <dd class="text-gray-900">{{ $transaction->created_at->format('d/m/Y H:i:s') }}</dd>
+                    <dd class="text-gray-900">{{ $transaction->created_at->copy()->subHours(5)->format('d/m/Y H:i:s') }}</dd>
                 </div>
                 <div>
                     <dt class="font-medium text-gray-700">Actualizado:</dt>
-                    <dd class="text-gray-900">{{ $transaction->updated_at->format('d/m/Y H:i:s') }}</dd>
+                    <dd class="text-gray-900">{{ $transaction->updated_at->copy()->subHours(5)->format('d/m/Y H:i:s') }}</dd>
                 </div>
             </dl>
         </div>
